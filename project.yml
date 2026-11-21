@@ -16,6 +16,19 @@ settings:
     DEVELOPMENT_TEAM: ""          # vul je Apple Developer Team ID in
     APP_NAME: Snoredle
 
+schemes:
+  Snoredle:
+    build:
+      targets:
+        Snoredle: all
+        SnoredleTests: [test]
+    test:
+      targets: [SnoredleTests]
+    run:
+      config: Debug
+    archive:
+      config: Release
+
 targets:
   Snoredle:
     type: application
