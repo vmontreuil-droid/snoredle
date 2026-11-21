@@ -63,9 +63,25 @@ jobs:
       - name: Project genereren
         run: brew install xcodegen && xcodegen generate
       - name: App Store Connect-sleutel klaarzetten
+        env:
+          P8: ${{ secrets.ASC_KEY_P8 }}
         run: |
           mkdir -p ~/private_keys
-          echo "${{ secrets.ASC_KEY_P8 }}" > ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
+          python3 - <<'PY'
+          import os, re, base64
+          raw = os.environ.get("P8", "")
+          body = re.sub(r"-----(BEGIN|END)[^-]*-----", "", raw)
+          body = re.sub(r"[^A-Za-z0-9+/=]", "", body)
+          print("Header aanwezig:", "BEGIN PRIVATE KEY" in raw, "| base64-tekens:", len(body))
+          try:
+              base64.b64decode(body, validate=True); print("Base64 geldig")
+          except Exception as e:
+              print("Base64 ONGELDIG:", e)
+          lines = [body[i:i+64] for i in range(0, len(body), 64)]
+          pem = "-----BEGIN PRIVATE KEY-----\n" + "\n".join(lines) + "\n-----END PRIVATE KEY-----\n"
+          path = os.path.expanduser(f"~/private_keys/AuthKey_{os.environ['ASC_KEY_ID']}.p8")
+          open(path, "w").write(pem)
+          PY
       - name: Archiveren (automatisch ondertekenen)
         run: |
           xcodebuild -project Snoredle.xcodeproj -scheme Snoredle \
