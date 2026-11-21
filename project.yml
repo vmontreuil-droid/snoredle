@@ -47,6 +47,7 @@ targets:
       path: iOS/Info.plist
       properties:
         CFBundleDisplayName: $(APP_NAME)
+        ITSAppUsesNonExemptEncryption: false
         UILaunchScreen: {}
         UIBackgroundModes: [audio, processing, bluetooth-central]
         NSBluetoothAlwaysUsageDescription: "$(APP_NAME) kan hartslag lezen van je sporthorloge of borstband via Bluetooth."
