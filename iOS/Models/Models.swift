@@ -27,6 +27,9 @@ final class SleepSession {
     @Relationship(deleteRule: .cascade, inverse: \LoudnessSample.session) var loudness: [LoudnessSample] = []
     @Relationship(deleteRule: .cascade, inverse: \PositionSample.session) var positions: [PositionSample] = []
     @Relationship(deleteRule: .cascade, inverse: \VitalSample.session) var vitals: [VitalSample] = []
+    @Relationship(deleteRule: .cascade, inverse: \NightSoundEvent.session) var nightSounds: [NightSoundEvent] = []
+    @Relationship(deleteRule: .cascade, inverse: \SleepStageSample.session) var stages: [SleepStageSample] = []
+    var alarmNote: String?
 
     init(start: Date = .now) {
         self.id = UUID()
@@ -220,4 +223,79 @@ enum Remedy: String, CaseIterable, Identifiable, Codable {
         case .humidifier: "humidifier.fill"
         }
     }
+}
+
+/// Andere geluiden tijdens de nacht.
+enum NightSoundKind: String, CaseIterable, Codable {
+    case talking, cough, sneeze, laughter, gasp
+    var label: String {
+        switch self {
+        case .talking: "Praten in je slaap"
+        case .cough: "Hoesten"
+        case .sneeze: "Niezen"
+        case .laughter: "Lachen"
+        case .gasp: "Naar adem happen"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .talking: "bubble.left.and.bubble.right.fill"
+        case .cough: "lungs.fill"
+        case .sneeze: "wind"
+        case .laughter: "face.smiling.inverse"
+        case .gasp: "exclamationmark.bubble.fill"
+        }
+    }
+    /// Labels van Apple's geluidsclassificatie die bij deze soort horen.
+    var classifierLabels: [String] {
+        switch self {
+        case .talking: ["speech", "whispering"]
+        case .cough: ["cough"]
+        case .sneeze: ["sneeze"]
+        case .laughter: ["laughter"]
+        case .gasp: ["gasp"]
+        }
+    }
+    static var allClassifierLabels: [String] { allCases.flatMap(\.classifierLabels) }
+}
+
+@Model
+final class NightSoundEvent {
+    var start: Date
+    var end: Date
+    var kindRaw: String
+    var confidence: Double
+    var clipFileName: String?
+    var session: SleepSession?
+    init(start: Date, end: Date, kind: NightSoundKind, confidence: Double, clipFileName: String?) {
+        self.start = start; self.end = end; self.kindRaw = kind.rawValue
+        self.confidence = confidence; self.clipFileName = clipFileName
+    }
+    var kind: NightSoundKind { NightSoundKind(rawValue: kindRaw) ?? .talking }
+    var duration: TimeInterval { end.timeIntervalSince(start) }
+}
+
+/// Slaapfase uit Apple Gezondheid (door je watch gemeten).
+enum SleepStage: Int, CaseIterable {
+    case awake = 0, rem = 1, core = 2, deep = 3, inBed = 4, asleep = 5
+    var label: String {
+        switch self {
+        case .awake: "Wakker"; case .rem: "REM"; case .core: "Kern"
+        case .deep: "Diep"; case .inBed: "In bed"; case .asleep: "Slaap"
+        }
+    }
+    /// Volgorde van boven naar onder in de grafiek.
+    var chartOrder: Int {
+        switch self { case .awake: 0; case .rem: 1; case .core, .asleep: 2; case .deep: 3; case .inBed: 4 }
+    }
+}
+
+@Model
+final class SleepStageSample {
+    var start: Date
+    var end: Date
+    var stageRaw: Int
+    var session: SleepSession?
+    init(start: Date, end: Date, stage: SleepStage) { self.start = start; self.end = end; self.stageRaw = stage.rawValue }
+    var stage: SleepStage { SleepStage(rawValue: stageRaw) ?? .asleep }
 }

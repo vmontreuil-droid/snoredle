@@ -12,7 +12,13 @@ struct SessionDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header
+                if let note = session.alarmNote {
+                    Label(note, systemImage: "alarm.fill").font(.footnote).foregroundStyle(Theme.accent)
+                }
+                if let h = highlight { card("Hoogtepunt van de nacht") { highlightRow(h) } }
                 card("Volume en snurken") { loudnessChart }
+                if !session.stages.isEmpty { card("Slaapfasen") { stagesChart } }
+                if !session.nightSounds.isEmpty { card("Andere geluiden (\(session.nightSounds.count))") { nightSoundsList } }
                 if !session.positions.isEmpty { card("Slaaphouding") { positionSection } }
                 if !session.vitals.isEmpty { card("Lichaam") { vitalsSection } }
                 card("Snurkfragmenten (\(session.events.count))") { eventsList }
@@ -42,7 +48,8 @@ struct SessionDetailView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(SnoreAnalysis.scoreLabel(session.snoreScore)).font(.title2.bold())
                 Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 2) {
-                    row("Geslapen", String(format: "%.1f u", session.duration / 3600))
+                    row("Geslapen", String(format: "%.1f u", session.duration / 3600)
+                        + (session.duration / 3600 >= AppSettings.shared.sleepGoalHours ? " ✓ doel" : ""))
                     row("Gesnurkt", "\(Int(session.snoreMinutes)) min (\(Int(session.snorePercentage * 100))%)")
                     row("Luid / episch", "\(Int(session.loudSnoreMinutes)) / \(Int(session.epicSnoreMinutes)) min")
                     row("Piek", "\(Int(session.peakDecibel)) dB")
@@ -96,6 +103,105 @@ struct SessionDetailView: View {
         }
     }
 
+    // MARK: Nieuwe onderdelen
+
+    private struct Highlight { let title: String; let detail: String; let clip: String }
+
+    /// Luidste snurkfragment, of anders het langste praatmoment.
+    private var highlight: Highlight? {
+        if let e = session.events.filter({ $0.clipFileName != nil }).max(by: { $0.peakDecibel < $1.peakDecibel }),
+           let c = e.clipFileName {
+            return Highlight(title: "Luidste snurk", detail: "\(Int(e.peakDecibel)) dB om \(e.start.formatted(date: .omitted, time: .shortened))", clip: c)
+        }
+        if let t = session.nightSounds.filter({ $0.clipFileName != nil }).max(by: { $0.duration < $1.duration }),
+           let c = t.clipFileName {
+            return Highlight(title: "Je praatte in je slaap", detail: "\(Int(t.duration)) s om \(t.start.formatted(date: .omitted, time: .shortened))", clip: c)
+        }
+        return nil
+    }
+
+    private func highlightRow(_ h: Highlight) -> some View {
+        HStack(spacing: 14) {
+            Button { player.toggle(ClipRecorder.url(for: h.clip)) } label: {
+                Image(systemName: player.playingURL?.lastPathComponent == h.clip ? "stop.circle.fill" : "play.circle.fill")
+                    .font(.system(size: 40)).foregroundStyle(Theme.accent)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(h.title).font(.headline)
+                Text(h.detail).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            ShareLink(item: ClipRecorder.url(for: h.clip),
+                      message: Text("Zo klonk ik vannacht 😴 — gemeten met Snoredle")) {
+                Image(systemName: "square.and.arrow.up").font(.title3)
+            }
+        }
+    }
+
+    private var stagesChart: some View {
+        let st = session.stages.sorted { $0.start < $1.start }.filter { $0.stage != .inBed }
+        let totals = Dictionary(grouping: st, by: { $0.stage == .asleep ? .core : $0.stage })
+            .mapValues { $0.map { $0.end.timeIntervalSince($0.start) }.reduce(0, +) / 60 }
+        return VStack(alignment: .leading, spacing: 10) {
+            Chart(st) { x in
+                BarMark(xStart: .value("Start", x.start), xEnd: .value("Einde", x.end),
+                        y: .value("Fase", (x.stage == .asleep ? SleepStage.core : x.stage).label))
+                    .foregroundStyle(stageColor(x.stage))
+            }
+            .chartYScale(domain: [SleepStage.awake.label, SleepStage.rem.label, SleepStage.core.label, SleepStage.deep.label])
+            .chartXAxis { AxisMarks(values: .stride(by: .hour)) { AxisValueLabel(format: .dateTime.hour()) } }
+            .frame(height: 130)
+            HStack(spacing: 14) {
+                ForEach([SleepStage.deep, .core, .rem, .awake], id: \.rawValue) { k in
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("\(Int(totals[k] ?? 0)) min").font(.subheadline.weight(.semibold))
+                        Text(k.label).font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            Text("Gemeten door je watch via Apple Gezondheid.").font(.caption2).foregroundStyle(.tertiary)
+        }
+    }
+
+    private func stageColor(_ s: SleepStage) -> Color {
+        switch s {
+        case .awake: .orange; case .rem: .cyan; case .core, .asleep: .blue; case .deep: .indigo; case .inBed: .gray
+        }
+    }
+
+    private var nightSoundsList: some View {
+        let byKind = Dictionary(grouping: session.nightSounds, by: \.kind)
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 16) {
+                ForEach(NightSoundKind.allCases.filter { byKind[$0] != nil }, id: \.self) { k in
+                    VStack(spacing: 4) {
+                        Image(systemName: k.symbol).foregroundStyle(Theme.accent)
+                        Text("\(byKind[k]?.count ?? 0)").font(.headline)
+                        Text(k.label).font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    }.frame(maxWidth: .infinity)
+                }
+            }
+            ForEach(session.nightSounds.sorted { $0.start < $1.start }.prefix(store.isPlus ? 200 : 5)) { n in
+                HStack {
+                    Image(systemName: n.kind.symbol).frame(width: 22).foregroundStyle(.secondary)
+                    Text(n.start.formatted(date: .omitted, time: .shortened)).font(.subheadline.monospacedDigit())
+                    Text("\(n.kind.label) · \(max(1, Int(n.duration))) s").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    if let c = n.clipFileName {
+                        Button { player.toggle(ClipRecorder.url(for: c)) } label: {
+                            Image(systemName: player.playingURL?.lastPathComponent == c ? "stop.circle.fill" : "play.circle.fill")
+                                .font(.title3)
+                        }
+                    }
+                }
+            }
+            if session.nightSounds.contains(where: { $0.kind == .gasp }) {
+                Text("Naar adem happen na snurken kan op ademstops wijzen. Bespreek het met je arts als het vaak voorkomt.")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+        }
+    }
+
     private var vitalsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(VitalKind.allCases.filter { k in session.vitals.contains { $0.kind == k } }, id: \.self) { kind in
@@ -107,7 +213,24 @@ struct SessionDetailView: View {
                     Text("gem. \(Int(values.reduce(0, +) / Double(values.count))) · min \(Int(values.min() ?? 0)) · max \(Int(values.max() ?? 0)) \(kind.unit)")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Chart(vs) { v in LineMark(x: .value("Tijd", v.at), y: .value(kind.label, v.value)) }
+                Chart {
+                    ForEach(session.events) { e in
+                        RectangleMark(xStart: .value("Start", e.start), xEnd: .value("Einde", e.end))
+                            .foregroundStyle(Theme.accent.opacity(0.12))
+                    }
+                    ForEach(vs) { v in
+                        LineMark(x: .value("Tijd", v.at), y: .value(kind.label, v.value))
+                            .foregroundStyle(kind == .oxygenSaturation ? .cyan : .pink)
+                        if kind == .oxygenSaturation, v.value < 90 {
+                            PointMark(x: .value("Tijd", v.at), y: .value(kind.label, v.value))
+                                .foregroundStyle(.red).symbolSize(30)
+                        }
+                    }
+                    if kind == .oxygenSaturation {
+                        RuleMark(y: .value("Grens", 90)).foregroundStyle(.red.opacity(0.5))
+                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                    }
+                }
                     .chartYScale(domain: .automatic(includesZero: false))
                     .frame(height: 80)
             }

@@ -35,6 +35,51 @@ struct SettingsView: View {
                     }
                 }
 
+                Section {
+                    Toggle("Wekker", isOn: $s.alarmEnabled)
+                    if s.alarmEnabled {
+                        Picker("Slim venster", selection: $s.smartWindowMinutes) {
+                            Text("Exact op tijd").tag(0); Text("10 min").tag(10); Text("20 min").tag(20)
+                            Text("30 min").tag(30); Text("45 min").tag(45)
+                        }
+                        Stepper("Sluimeren \(s.snoozeMinutes) min", value: $s.snoozeMinutes, in: 3...30)
+                        Toggle("Ook trillen op watch", isOn: $s.alarmVibrateWatch)
+                        VStack(alignment: .leading) {
+                            Text("Gevoeligheid slimme wekker")
+                            Slider(value: $s.smartWakeMovementThreshold, in: 0.5...4) {
+                                Text("Gevoeligheid")
+                            } minimumValueLabel: { Text("hoog").font(.caption2) } maximumValueLabel: { Text("laag").font(.caption2) }
+                        }
+                    }
+                } header: { Text("Wekker") } footer: {
+                    Text("Op iOS 26 gaat de wekker af zoals de Klok-app: ook in stille modus, met Focus aan en op je Apple Watch. De meting stopt vanzelf als je hem uitzet.")
+                }
+
+                Section("Slaapdoel en meldingen") {
+                    Stepper(String(format: "Slaapdoel %.1f u", s.sleepGoalHours), value: $s.sleepGoalHours, in: 5...10, step: 0.5)
+                    Toggle("Bedtijdherinnering", isOn: $s.bedtimeReminder)
+                        .onChange(of: s.bedtimeReminder) { NotificationService.shared.refreshBedtime() }
+                    if s.bedtimeReminder {
+                        DatePicker("Bedtijd", selection: Binding(
+                            get: { Calendar.current.date(bySettingHour: s.bedtimeMinutes / 60, minute: s.bedtimeMinutes % 60, second: 0, of: .now) ?? .now },
+                            set: { d in
+                                let c = Calendar.current.dateComponents([.hour, .minute], from: d)
+                                s.bedtimeMinutes = (c.hour ?? 22) * 60 + (c.minute ?? 30)
+                                NotificationService.shared.refreshBedtime()
+                            }), displayedComponents: .hourAndMinute)
+                    }
+                    Toggle("Weekrapport op maandag", isOn: $s.weeklyReport)
+                }
+
+                Section {
+                    Toggle("Andere geluiden herkennen", isOn: $s.detectNightSounds)
+                    if s.detectNightSounds {
+                        Toggle("Praten in je slaap opnemen", isOn: $s.saveTalkClips)
+                    }
+                } header: { Text("Nachtgeluiden") } footer: {
+                    Text("Praten, hoesten, niezen, lachen en naar adem happen.")
+                }
+
                 Section("Opnames") {
                     Toggle("Snurkfragmenten bewaren", isOn: $s.saveClips)
                     Stepper("Max. \(s.maxClipsPerNight) per nacht", value: $s.maxClipsPerNight, in: 5...200, step: 5)

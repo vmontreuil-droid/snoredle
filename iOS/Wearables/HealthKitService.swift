@@ -48,6 +48,22 @@ final class HealthKitService {
         return out
     }
 
+    func stages(from start: Date, to end: Date) async -> [(SleepStage, Date, Date)] {
+        await sleepStages(from: start, to: end).compactMap { v, iv in
+            let st: SleepStage
+            switch v {
+            case .awake: st = .awake
+            case .asleepREM: st = .rem
+            case .asleepCore: st = .core
+            case .asleepDeep: st = .deep
+            case .inBed: st = .inBed
+            case .asleepUnspecified: st = .asleep
+            @unknown default: return nil
+            }
+            return (st, iv.start, iv.end)
+        }
+    }
+
     /// Slaapfasen van andere apps/watches (in bed, kern, diep, REM, wakker).
     func sleepStages(from start: Date, to end: Date) async -> [(HKCategoryValueSleepAnalysis, DateInterval)] {
         let predicate = HKQuery.predicateForSamples(withStart: start, end: end)

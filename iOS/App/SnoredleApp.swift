@@ -10,7 +10,8 @@ struct SnoredleApp: App {
 
     let container: ModelContainer = {
         let schema = Schema([SleepSession.self, SnoreEvent.self, LoudnessSample.self,
-                             PositionSample.self, VitalSample.self])
+                             PositionSample.self, VitalSample.self,
+                             NightSoundEvent.self, SleepStageSample.self])
         return try! ModelContainer(for: schema)
     }()
 
@@ -28,7 +29,11 @@ struct SnoredleApp: App {
                 .environmentObject(hub)
                 .environmentObject(store)
                 .environmentObject(manager)
-                .onAppear { manager.attach(container.mainContext) }
+                .onAppear {
+                    manager.attach(container.mainContext)
+                    WidgetBridge.publish(context: container.mainContext)
+                    NotificationService.shared.refreshWeekly(context: container.mainContext)
+                }
                 .tint(Theme.accent)
                 .preferredColorScheme(.dark)
         }

@@ -104,7 +104,7 @@ extension SnoreDetector: SNResultsObserving {
         guard let result = result as? SNClassificationResult else { return }
         let snore = result.classification(forIdentifier: "snoring")?.confidence ?? 0
         var others: [String: Double] = [:]
-        for label in Self.interferingLabels {
+        for label in Self.interferingLabels + NightSoundKind.allClassifierLabels {
             if let c = result.classification(forIdentifier: label)?.confidence, c > 0.3 { others[label] = c }
         }
         let frame = AudioFrame(at: .now, decibel: lastDecibel, snoreConfidence: snore, otherSounds: others)

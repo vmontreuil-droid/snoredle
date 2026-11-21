@@ -13,6 +13,8 @@ struct TonightView: View {
     @State private var remedies: Set<Remedy> = []
     @State private var showCalibration = false
     @State private var showAllFactors = false
+    @State private var showSounds = false
+    @ObservedObject private var sounds = SleepSoundController.shared
 
     var body: some View {
         NavigationStack {
@@ -26,6 +28,30 @@ struct TonightView: View {
                     }
 
                     WatchStatusPill(showCalibration: $showCalibration)
+
+                    AlarmCard()
+
+                    Button { showSounds = true } label: {
+                        HStack(spacing: 12) {
+                            ZStack {
+                                Circle().fill(.white.opacity(0.06))
+                                Image(systemName: sounds.isPlaying ? sounds.sound.symbol : "music.note")
+                                    .foregroundStyle(Theme.accent)
+                                    .symbolEffect(.variableColor.iterative, isActive: sounds.isPlaying)
+                            }.frame(width: 38, height: 38)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("Slaapgeluiden").font(.subheadline.weight(.semibold))
+                                Text(sounds.isPlaying ? "\(sounds.sound.label) speelt" : "Regen, zee, ruis… om in te slapen")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                        }
+                        .padding(.horizontal, 12).padding(.vertical, 10)
+                        .background(.white.opacity(0.05), in: Capsule())
+                        .overlay(Capsule().strokeBorder(.white.opacity(0.08)))
+                    }
+                    .buttonStyle(.plain)
 
                     section(title: "Wat speelde er vandaag?",
                             subtitle: factors.isEmpty ? "Optioneel — zo leer je wat je snurken beïnvloedt" : "\(factors.count) geselecteerd") {
@@ -67,6 +93,7 @@ struct TonightView: View {
             .safeAreaInset(edge: .bottom) { startButton }
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showCalibration) { CalibrationView() }
+            .sheet(isPresented: $showSounds) { SleepSoundsSheet() }
             .onAppear {
                 remedies = Set(lastRemediesRaw.split(separator: ",").compactMap { Remedy(rawValue: String($0)) })
             }

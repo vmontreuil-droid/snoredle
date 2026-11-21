@@ -49,6 +49,11 @@ final class SessionManager: ObservableObject {
 
     private var currentPosition: SleepPosition = .unknown
 
+    // Andere nachtgeluiden
+    private struct SoundTrack { var start: Date; var last: Date; var conf: [Double]; var clip: String? }
+    private var soundTracks: [NightSoundKind: SoundTrack] = [:]
+    @Published private(set) var nightSoundCount = 0
+
     init() {
         detector.delegate = self
         let clips = self.clips          // audiothread: niet via MainActor-self gaan
@@ -56,6 +61,9 @@ final class SessionManager: ObservableObject {
         hub.events
             .sink { [weak self] source, event in self?.handleWearable(event, source: source) }
             .store(in: &bag)
+        AlarmService.shared.onDismissed = { [weak self] in
+            Task { @MainActor in await self?.stop() }
+        }
     }
 
     func attach(_ context: ModelContext) { self.context = context }
@@ -71,6 +79,7 @@ final class SessionManager: ObservableObject {
         context.insert(session)
         current = session
         resetEpisode(); clipsThisNight = 0; eventCount = 0
+        soundTracks = [:]; nightSoundCount = 0
         UIApplication.shared.isIdleTimerDisabled = false   // scherm mag uit; audio loopt door
 
         hub.start(id: session.id, settings: settings.watchSettings)
@@ -80,6 +89,9 @@ final class SessionManager: ObservableObject {
             lastError = "Microfoon kon niet starten: \(error.localizedDescription)"
             context.delete(session); current = nil; return
         }
+
+        Task { await AlarmService.shared.arm() }
+        LiveActivityService.shared.start(session: session, alarm: nil)
 
         let delay = TimeInterval(settings.startDelayMinutes * 60)
         if delay > 0 {
@@ -99,8 +111,12 @@ final class SessionManager: ObservableObject {
         state = .finishing
         delayTask?.cancel()
         closeEpisode(at: .now)
+        for kind in Array(soundTracks.keys) { closeSound(kind) }
         flushMinute()
         detector.stop()
+        AlarmService.shared.disarm()
+        SleepSoundController.shared.stop(fade: 0.5)
+        LiveActivityService.shared.end(score: nil)
         hub.stop(id: session.id)
         session.end = .now
 
@@ -109,8 +125,16 @@ final class SessionManager: ObservableObject {
                 session.vitals.append(VitalSample(at: at, kind: kind, value: value))
             }
         }
+        if settings.useHealthKit {
+            for (stage, a, b) in await HealthKitService.shared.stages(from: session.start.addingTimeInterval(-1800), to: .now) {
+                session.stages.append(SleepStageSample(start: a, end: b, stage: stage))
+            }
+        }
+        session.alarmNote = AlarmService.shared.lastWakeReason
         SnoreAnalysis.summarize(session)
         try? context?.save()
+        LiveActivityService.shared.end(score: session.snoreScore)
+        if let ctx = context { WidgetBridge.publish(context: ctx); NotificationService.shared.refreshWeekly(context: ctx) }
 
         let favorites = Set((try? context?.fetch(FetchDescriptor<SnoreEvent>(predicate: #Predicate<SnoreEvent> { $0.isFavorite })))?
             .compactMap(\.clipFileName) ?? [])
@@ -139,6 +163,9 @@ final class SessionManager: ObservableObject {
         if f.at.timeIntervalSince(minuteStart) >= 60 { flushMinute() }
         guard state == .recording else { return }
         checkAutoStop()
+        // Tijdens slaapgeluiden niet meten: de microfoon hoort dan vooral de speaker.
+        if SleepSoundController.shared.isPlaying { return }
+        if settings.detectNightSounds { trackNightSounds(f) }
 
         let interfering = settings.ignoreSpeech && (f.otherSounds["speech"] ?? 0) > f.snoreConfidence
         let loudEnough = f.decibel > noiseFloor + 3
@@ -167,9 +194,14 @@ final class SessionManager: ObservableObject {
     }
 
     private func openEpisode(at t: Date) {
+        // Loopt er nog een praat-fragment? Eerst afsluiten.
+        if soundTracks.values.contains(where: { $0.clip != nil }) { clips.endClip()
+            for k in soundTracks.keys { soundTracks[k]?.clip = nil } }
         episodeStart = t.addingTimeInterval(-1.5)
         episodePeak = 0; episodeConfidence = []; episodeNudged = false
         isSnoring = true
+        LiveActivityService.shared.update(snoreEvents: eventCount, isSnoring: true,
+                                          position: currentPosition, nightSounds: nightSoundCount)
         if settings.saveClips, clipsThisNight < settings.maxClipsPerNight, let fmt = detector.format {
             episodeClip = clips.beginClip(format: fmt)
             if episodeClip != nil { clipsThisNight += 1 }
@@ -189,6 +221,8 @@ final class SessionManager: ObservableObject {
             e.wasNudged = episodeNudged
             session.events.append(e)
             eventCount += 1
+            LiveActivityService.shared.update(snoreEvents: eventCount, isSnoring: false,
+                                              position: currentPosition, nightSounds: nightSoundCount)
         } else if let clip = episodeClip {
             try? FileManager.default.removeItem(at: ClipRecorder.url(for: clip))
             clipsThisNight -= 1
@@ -199,6 +233,46 @@ final class SessionManager: ObservableObject {
     private func resetEpisode() {
         episodeStart = nil; episodeClip = nil; episodePeak = 0
         episodeConfidence = []; snoreStreak = 0; isSnoring = false
+    }
+
+    // MARK: Nachtgeluiden
+
+    private func trackNightSounds(_ f: AudioFrame) {
+        for kind in NightSoundKind.allCases {
+            let conf = kind.classifierLabels.compactMap { f.otherSounds[$0] }.max() ?? 0
+            if conf >= 0.6, f.snoreConfidence < conf {
+                if var t = soundTracks[kind] {
+                    t.last = f.at; t.conf.append(conf); soundTracks[kind] = t
+                } else {
+                    var clip: String?
+                    if kind == .talking, settings.saveTalkClips, episodeStart == nil,
+                       !soundTracks.values.contains(where: { $0.clip != nil }),
+                       clipsThisNight < settings.maxClipsPerNight, let fmt = detector.format {
+                        clip = clips.beginClip(format: fmt)
+                        if clip != nil { clipsThisNight += 1 }
+                    }
+                    soundTracks[kind] = SoundTrack(start: f.at.addingTimeInterval(-1), last: f.at, conf: [conf], clip: clip)
+                }
+            } else if let t = soundTracks[kind], f.at.timeIntervalSince(t.last) > 3 {
+                closeSound(kind)
+            }
+        }
+    }
+
+    private func closeSound(_ kind: NightSoundKind) {
+        guard let t = soundTracks.removeValue(forKey: kind), let session = current else { return }
+        if t.clip != nil { clips.endClip() }
+        let duration = t.last.timeIntervalSince(t.start)
+        // Eén kuch of nies telt; praten pas vanaf 2 s.
+        if duration >= (kind == .talking ? 2 : 0.5) {
+            let conf = t.conf.reduce(0, +) / Double(t.conf.count)
+            session.nightSounds.append(NightSoundEvent(start: t.start, end: t.last.addingTimeInterval(1),
+                                                       kind: kind, confidence: conf, clipFileName: t.clip))
+            nightSoundCount += 1
+        } else if let c = t.clip {
+            try? FileManager.default.removeItem(at: ClipRecorder.url(for: c))
+            clipsThisNight -= 1
+        }
     }
 
     /// Snurken → stilte ≥ drempel → markeer mogelijke ademstop. GEEN diagnose.
@@ -243,11 +317,16 @@ final class SessionManager: ObservableObject {
         guard let session = current else { return }
         switch e {
         case .position(let p):
+            if p.position != currentPosition {
+                LiveActivityService.shared.update(snoreEvents: eventCount, isSnoring: isSnoring,
+                                                  position: p.position, nightSounds: nightSoundCount)
+            }
             currentPosition = p.position
             session.positions.append(PositionSample(at: p.at, position: p.position,
                                                     confidence: p.confidence, source: source))
         case .vital(let kind, let v, let at):
             session.vitals.append(VitalSample(at: at, kind: kind, value: v))
+            if kind == .movement { AlarmService.shared.signal(movement: v, at: at) }
         default: break
         }
     }

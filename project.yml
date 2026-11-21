@@ -36,13 +36,16 @@ targets:
     sources:
       - path: iOS
       - path: Shared
+      - path: SharedWidget
     dependencies:
       - target: SnoredleWatch
+      - target: SnoredleWidgets
     entitlements:
       path: iOS/Snoredle.entitlements
       properties:
         com.apple.developer.healthkit: true
         com.apple.developer.healthkit.access: []
+        com.apple.security.application-groups: [group.be.snoredle]
     info:
       path: iOS/Info.plist
       properties:
@@ -58,6 +61,8 @@ targets:
         NSHealthUpdateUsageDescription: "$(APP_NAME) kan slaapanalyse opslaan in Gezondheid."
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         BGTaskSchedulerPermittedIdentifiers: [be.snoredle.analysis]
+        NSAlarmKitUsageDescription: "$(APP_NAME) gebruikt de wekker om je 's ochtends te wekken, ook in stille modus."
+        NSSupportsLiveActivities: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: be.snoredle.app
@@ -100,3 +105,26 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: be.snoredle.app.tests
     dependencies:
       - target: Snoredle
+
+  SnoredleWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Widgets
+      - path: SharedWidget
+    entitlements:
+      path: Widgets/SnoredleWidgets.entitlements
+      properties:
+        com.apple.security.application-groups: [group.be.snoredle]
+    info:
+      path: Widgets/Info.plist
+      properties:
+        CFBundleDisplayName: $(APP_NAME)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: be.snoredle.app.widgets
+        TARGETED_DEVICE_FAMILY: "1"

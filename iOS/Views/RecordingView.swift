@@ -6,6 +6,9 @@ struct RecordingView: View {
     @EnvironmentObject var hub: WearableHub
     @State private var dimmed = false
     @State private var stopProgress = 0.0
+    @State private var showSounds = false
+    @ObservedObject private var alarm = AlarmService.shared
+    @ObservedObject private var sounds = SleepSoundController.shared
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { ctx in
@@ -27,7 +30,20 @@ struct RecordingView: View {
                     }
                 }
 
+                if let a = alarm.armedFor {
+                    Label(alarmText(a), systemImage: "alarm.fill")
+                        .font(.subheadline).foregroundStyle(dimmed ? Color(white: 0.35) : Theme.accent)
+                }
                 if !dimmed { liveMeters }
+                if !dimmed {
+                    Button { showSounds = true } label: {
+                        Label(sounds.isPlaying ? "\(sounds.sound.label) speelt · meting gepauzeerd" : "Slaapgeluiden",
+                              systemImage: sounds.isPlaying ? sounds.sound.symbol : "music.note")
+                            .font(.footnote.weight(.medium))
+                            .padding(.horizontal, 14).padding(.vertical, 8)
+                            .background(.white.opacity(0.08), in: Capsule())
+                    }.buttonStyle(.plain)
+                }
                 Spacer()
 
                 ZStack {
@@ -51,6 +67,8 @@ struct RecordingView: View {
             .onTapGesture { dimmed.toggle() }
         }
         .statusBarHidden()
+        .sheet(isPresented: $showSounds) { SleepSoundsSheet() }
+        .fullScreenCover(isPresented: .constant(alarm.isRinging)) { AlarmRingingView() }
         .task { try? await Task.sleep(for: .seconds(30)); dimmed = true }
     }
 
@@ -59,6 +77,9 @@ struct RecordingView: View {
             HStack(spacing: 28) {
                 meter("Volume", "\(Int(manager.liveDecibel)) dB", icon: "waveform")
                 meter("Episodes", "\(manager.eventCount)", icon: "zzz")
+                if manager.nightSoundCount > 0 {
+                    meter("Geluiden", "\(manager.nightSoundCount)", icon: "bubble.left.fill")
+                }
                 if let p = hub.lastPosition {
                     meter("Houding", p.position.label, icon: p.position.symbol)
                 }
@@ -71,6 +92,12 @@ struct RecordingView: View {
                     .foregroundStyle(Theme.accent).transition(.opacity)
             }
         }
+    }
+
+    private func alarmText(_ a: Date) -> String {
+        let t = a.formatted(date: .omitted, time: .shortened)
+        if let w = alarm.windowStart { return "Wekker \(w.formatted(date: .omitted, time: .shortened))–\(t)" }
+        return "Wekker \(t)"
     }
 
     private func meter(_ title: String, _ value: String, icon: String) -> some View {

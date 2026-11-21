@@ -32,6 +32,20 @@ final class AppSettings: ObservableObject {
     @AppStorage("pauseDetection") var pauseDetection: Bool = true      // mogelijke ademstops markeren
     @AppStorage("pauseThresholdSeconds") var pauseThresholdSeconds: Double = 10
 
+    // Wekker
+    @AppStorage("alarmEnabled") var alarmEnabled: Bool = false
+    @AppStorage("alarmMinutes") var alarmMinutes: Int = 7 * 60
+    @AppStorage("smartWindowMinutes") var smartWindowMinutes: Int = 20   // 0 = gewone wekker
+    @AppStorage("snoozeMinutes") var snoozeMinutes: Int = 9
+    @AppStorage("alarmVibrateWatch") var alarmVibrateWatch: Bool = true
+    @AppStorage("smartWakeMovementThreshold") var smartWakeMovementThreshold: Double = 1.5
+
+    // Doelen en meldingen
+    @AppStorage("sleepGoalHours") var sleepGoalHours: Double = 7.5
+    @AppStorage("weeklyReport") var weeklyReport: Bool = true
+    @AppStorage("detectNightSounds") var detectNightSounds: Bool = true
+    @AppStorage("saveTalkClips") var saveTalkClips: Bool = true
+
     // Algemeen
     @AppStorage("didOnboard") var didOnboard: Bool = false
     @AppStorage("bedtimeReminder") var bedtimeReminder: Bool = false

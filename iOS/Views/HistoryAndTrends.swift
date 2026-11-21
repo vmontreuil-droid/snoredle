@@ -78,6 +78,37 @@ struct TrendsView: View {
                         Text("Gemiddeld \(avg) · \(done.count) nachten").font(.caption).foregroundStyle(.secondary)
                     }
 
+                    box("Uitdagingen") {
+                        let streak = Achievements.streak(sessions.filter { $0.end != nil })
+                        HStack(spacing: 10) {
+                            Image(systemName: "flame.fill").font(.title2).foregroundStyle(streak > 0 ? .orange : .secondary)
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text("\(streak) \(streak == 1 ? "nacht" : "nachten") op rij").font(.headline)
+                                Text("Meet elke nacht om je reeks te houden").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 12)], spacing: 14) {
+                            ForEach(Achievements.badges(sessions)) { b in
+                                VStack(spacing: 6) {
+                                    ZStack {
+                                        Circle().stroke(.white.opacity(0.08), lineWidth: 4)
+                                        Circle().trim(from: 0, to: b.progress)
+                                            .stroke(Theme.accent, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                                            .rotationEffect(.degrees(-90))
+                                        Image(systemName: b.symbol).font(.title3)
+                                            .foregroundStyle(b.done ? Theme.accent : .secondary)
+                                    }
+                                    .frame(width: 56, height: 56)
+                                    .opacity(b.done ? 1 : 0.75)
+                                    Text(b.title).font(.caption.weight(.semibold)).multilineTextAlignment(.center)
+                                    Text(b.detail).font(.caption2).foregroundStyle(.secondary)
+                                        .multilineTextAlignment(.center).lineLimit(2)
+                                }
+                                .accessibilityElement(children: .combine)
+                            }
+                        }
+                    }
+
                     box("Wat beïnvloedt je snurken?") {
                         if store.isPlus {
                             let ins = SnoreAnalysis.insights(done)
