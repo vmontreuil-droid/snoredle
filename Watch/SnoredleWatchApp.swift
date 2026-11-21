@@ -1,0 +1,82 @@
+import SwiftUI
+import WatchKit
+import WatchConnectivity
+import HealthKit
+
+@main
+struct SnoredleWatchApp: App {
+    @WKApplicationDelegateAdaptor private var delegate: WatchAppDelegate
+    @StateObject private var tracker = NightTracker.shared
+    private let connector = WatchConnector.shared
+
+    var body: some Scene {
+        WindowGroup {
+            WatchHomeView().environmentObject(tracker)
+                .task {
+                    let types: Set<HKObjectType> = [HKQuantityType(.heartRate)]
+                    try? await HKHealthStore().requestAuthorization(toShare: [HKObjectType.workoutType()], read: types)
+                }
+        }
+    }
+}
+
+/// Wordt gestart door de iPhone via `HKHealthStore.startWatchApp`.
+final class WatchAppDelegate: NSObject, WKApplicationDelegate {
+    func handle(_ workoutConfiguration: HKWorkoutConfiguration) {
+        Task { @MainActor in
+            // Begin meteen; de instellingen volgen via het startSession-bericht.
+            NightTracker.shared.start(id: UUID(), settings: WatchSettings())
+        }
+    }
+}
+
+/// Ontvangt berichten van de iPhone.
+final class WatchConnector: NSObject, WCSessionDelegate {
+    static let shared = WatchConnector()
+    override init() {
+        super.init()
+        WCSession.default.delegate = self
+        WCSession.default.activate()
+    }
+    private func handle(_ data: Data) {
+        guard let msg = try? WatchMessage.decode(data) else { return }
+        Task { @MainActor in NightTracker.shared.handle(msg) }
+    }
+    func session(_ s: WCSession, didReceiveMessageData d: Data) { handle(d) }
+    func session(_ s: WCSession, didReceiveUserInfo info: [String: Any] = [:]) {
+        if let d = info["msg"] as? Data { handle(d) }
+    }
+    func session(_ s: WCSession, didReceiveApplicationContext ctx: [String: Any]) {
+        if let d = ctx["profile"] as? Data { handle(d) }
+    }
+    func session(_ s: WCSession, activationDidCompleteWith state: WCSessionActivationState, error: Error?) {
+        if let d = s.receivedApplicationContext["profile"] as? Data { handle(d) }
+    }
+}
+
+struct WatchHomeView: View {
+    @EnvironmentObject var t: NightTracker
+
+    var body: some View {
+        VStack(spacing: 8) {
+            if let c = t.calibrating {
+                Text("Stil blijven liggen…").font(.headline)
+                Image(systemName: c.symbol).font(.largeTitle)
+                Text(c.label)
+            } else if t.isTracking {
+                Image(systemName: t.position.symbol).font(.largeTitle).foregroundStyle(.orange)
+                Text(t.position.label).font(.headline)
+                if let hr = t.heartRate { Label("\(Int(hr))", systemImage: "heart.fill").foregroundStyle(.red) }
+                Text("Slaap lekker 🌙").font(.footnote).foregroundStyle(.secondary)
+                Button("Stop", role: .destructive) { t.stop() }.padding(.top, 4)
+            } else {
+                Image(systemName: "moon.zzz.fill").font(.largeTitle).foregroundStyle(.orange)
+                Text("Snoredle").font(.headline)
+                Text(t.profile.isComplete ? "Klaar voor de nacht" : "Kalibreer via je iPhone")
+                    .font(.footnote).multilineTextAlignment(.center).foregroundStyle(.secondary)
+                Text("Start de nacht op je iPhone.").font(.caption2).foregroundStyle(.secondary)
+                Button("Test tikje") { t.nudge(.medium) }
+            }
+        }
+    }
+}

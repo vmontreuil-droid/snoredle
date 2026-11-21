@@ -1,0 +1,5 @@
+Snoredle.xcodeproj/
+DerivedData/
+*.xcuserstate
+build.log
+.DS_Store

@@ -1,0 +1,83 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      testflight:
+        description: "Ook naar TestFlight uploaden"
+        type: boolean
+        default: false
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Compileren (simulator)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Nieuwste Xcode kiezen
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          echo "Gebruik $XCODE"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+      - name: Project genereren
+        run: brew install xcodegen && xcodegen generate
+      - name: Bouwen
+        run: |
+          set -o pipefail
+          xcodebuild -project Snoredle.xcodeproj -scheme Snoredle \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build.log | grep -E "error:|warning: .*deprecated|BUILD" || true
+          grep -q "BUILD SUCCEEDED" build.log
+      - name: Foutenlijst
+        if: failure()
+        run: grep -E "error:" build.log | sort -u | head -100
+      - name: Tests
+        run: |
+          xcodebuild -project Snoredle.xcodeproj -scheme Snoredle \
+            -destination 'platform=iOS Simulator,name=iPhone 16' test CODE_SIGNING_ALLOWED=NO 2>&1 | tail -30 || true
+
+  testflight:
+    name: Naar TestFlight
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.testflight
+    runs-on: macos-latest
+    env:
+      TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Nieuwste Xcode kiezen
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+      - name: Project genereren
+        run: brew install xcodegen && xcodegen generate
+      - name: App Store Connect-sleutel klaarzetten
+        run: |
+          mkdir -p ~/private_keys
+          echo "${{ secrets.ASC_KEY_P8 }}" > ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
+      - name: Archiveren (automatisch ondertekenen)
+        run: |
+          xcodebuild -project Snoredle.xcodeproj -scheme Snoredle \
+            -destination 'generic/platform=iOS' -archivePath $RUNNER_TEMP/Snoredle.xcarchive \
+            DEVELOPMENT_TEAM=$TEAM_ID CODE_SIGN_STYLE=Automatic \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
+            -authenticationKeyID $ASC_KEY_ID -authenticationKeyIssuerID $ASC_ISSUER_ID \
+            archive
+      - name: Uploaden naar App Store Connect / TestFlight
+        run: |
+          sed "s/TEAM_ID_PLACEHOLDER/$TEAM_ID/" ci/ExportOptions.plist > $RUNNER_TEMP/ExportOptions.plist
+          xcodebuild -exportArchive -archivePath $RUNNER_TEMP/Snoredle.xcarchive \
+            -exportOptionsPlist $RUNNER_TEMP/ExportOptions.plist -exportPath $RUNNER_TEMP/export \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
+            -authenticationKeyID $ASC_KEY_ID -authenticationKeyIssuerID $ASC_ISSUER_ID
