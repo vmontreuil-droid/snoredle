@@ -86,7 +86,8 @@ jobs:
         run: |
           xcodebuild -project Snoredle.xcodeproj -scheme Snoredle \
             -destination 'generic/platform=iOS' -archivePath $RUNNER_TEMP/Snoredle.xcarchive \
-            DEVELOPMENT_TEAM=$TEAM_ID CODE_SIGN_STYLE=Automatic CODE_SIGN_IDENTITY="Apple Distribution" \
+            DEVELOPMENT_TEAM=$TEAM_ID CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO PROVISIONING_PROFILE_SPECIFIER="" \
             CURRENT_PROJECT_VERSION=${{ github.run_number }} \
             -allowProvisioningUpdates \
             -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
