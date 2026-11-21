@@ -31,7 +31,7 @@ struct SessionDetailView: View {
                 }
             }.padding()
         }
-        .background(Theme.night.ignoresSafeArea())
+        .background(NightBackground())
         .navigationTitle(session.start.formatted(.dateTime.weekday(.wide).day().month()))
         .navigationBarTitleDisplayMode(.inline)
     }

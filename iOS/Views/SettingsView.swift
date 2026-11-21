@@ -165,6 +165,6 @@ struct PaywallView: View {
                     .font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }.padding(24)
         }
-        .background(Theme.night.ignoresSafeArea())
+        .background(NightBackground())
     }
 }

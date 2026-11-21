@@ -109,7 +109,7 @@ struct TrendsView: View {
                     }
                 }.padding()
             }
-            .background(Theme.night.ignoresSafeArea())
+            .background(NightBackground())
             .navigationTitle("Inzichten")
         }
     }

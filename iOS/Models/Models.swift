@@ -155,6 +155,24 @@ enum SleepFactor: String, CaseIterable, Identifiable, Codable {
         case .heatwave: "Warme nacht"
         }
     }
+    var symbol: String {
+        switch self {
+        case .alcohol: "wineglass.fill"
+        case .lateMeal: "fork.knife"
+        case .cold: "facemask.fill"
+        case .allergy: "allergens.fill"
+        case .tired: "battery.25percent"
+        case .sleepingPill: "pills.fill"
+        case .smoking: "smoke.fill"
+        case .caffeine: "cup.and.saucer.fill"
+        case .sport: "figure.run"
+        case .stress: "brain.head.profile"
+        case .newPillow: "bed.double.fill"
+        case .sharedBed: "person.2.fill"
+        case .menstruation: "drop.fill"
+        case .heatwave: "thermometer.sun.fill"
+        }
+    }
     var emoji: String {
         switch self {
         case .alcohol: "🍷"; case .lateMeal: "🍝"; case .cold: "🤧"; case .allergy: "🌼"
@@ -184,6 +202,22 @@ enum Remedy: String, CaseIterable, Identifiable, Codable {
         case .throatExercises: "Keeloefeningen"
         case .noAlcohol: "Geen alcohol"
         case .humidifier: "Luchtbevochtiger"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .sideSleeping: "arrow.turn.up.right"
+        case .watchNudge: "applewatch.radiowaves.left.and.right"
+        case .nasalStrip: "bandage.fill"
+        case .nasalSpray: "wind"
+        case .mouthTape: "mouth.fill"
+        case .mandibularDevice: "mouth"
+        case .chinStrap: "face.smiling"
+        case .raisedHead: "arrow.up.to.line"
+        case .cpap: "lungs.fill"
+        case .throatExercises: "music.mic"
+        case .noAlcohol: "nosign"
+        case .humidifier: "humidifier.fill"
         }
     }
 }

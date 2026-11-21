@@ -28,7 +28,7 @@ struct OnboardingView: View {
                  button: "Begrijpen, start") { settings.didOnboard = true }.tag(3)
         }
         .tabViewStyle(.page(indexDisplayMode: .always))
-        .background(Theme.night.ignoresSafeArea())
+        .background(NightBackground())
     }
 
     private func step(icon: String, title: String, text: String, button: String, action: @escaping () -> Void) -> some View {
