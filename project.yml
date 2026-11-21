@@ -59,6 +59,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: be.snoredle.app
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        TARGETED_DEVICE_FAMILY: "1"   # alleen iPhone
 
   SnoredleWatch:
     type: application
