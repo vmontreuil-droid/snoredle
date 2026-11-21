@@ -47,6 +47,8 @@ targets:
       path: iOS/Info.plist
       properties:
         CFBundleDisplayName: $(APP_NAME)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
         ITSAppUsesNonExemptEncryption: false
         UILaunchScreen: {}
         UIBackgroundModes: [audio, processing, bluetooth-central]
@@ -76,6 +78,8 @@ targets:
       path: Watch/Info.plist
       properties:
         CFBundleDisplayName: $(APP_NAME)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
         WKApplication: true
         WKCompanionAppBundleIdentifier: be.snoredle.app
         WKBackgroundModes: [workout-processing]
