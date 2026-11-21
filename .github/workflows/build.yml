@@ -82,12 +82,15 @@ jobs:
           path = os.path.expanduser(f"~/private_keys/AuthKey_{os.environ['ASC_KEY_ID']}.p8")
           open(path, "w").write(pem)
           PY
+      - name: Oude tijdelijke certificaten opruimen
+        run: |
+          pip3 install --quiet --break-system-packages pyjwt cryptography 2>/dev/null || pip3 install --quiet pyjwt cryptography
+          python3 ci/asc_certs.py "$ASC_KEY_ID" "$ASC_ISSUER_ID" ~/private_keys/AuthKey_${ASC_KEY_ID}.p8
       - name: Archiveren (automatisch ondertekenen)
         run: |
           xcodebuild -project Snoredle.xcodeproj -scheme Snoredle \
             -destination 'generic/platform=iOS' -archivePath $RUNNER_TEMP/Snoredle.xcarchive \
-            DEVELOPMENT_TEAM=$TEAM_ID CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="-" \
-            CODE_SIGNING_REQUIRED=NO PROVISIONING_PROFILE_SPECIFIER="" \
+            DEVELOPMENT_TEAM=$TEAM_ID CODE_SIGN_STYLE=Automatic \
             CURRENT_PROJECT_VERSION=${{ github.run_number }} \
             -allowProvisioningUpdates \
             -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
@@ -104,3 +107,6 @@ jobs:
             -allowProvisioningUpdates \
             -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
             -authenticationKeyID $ASC_KEY_ID -authenticationKeyIssuerID $ASC_ISSUER_ID
+      - name: Eigen tijdelijk certificaat opruimen
+        if: always()
+        run: python3 ci/asc_certs.py "$ASC_KEY_ID" "$ASC_ISSUER_ID" ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 || true
