@@ -54,6 +54,28 @@ final class AppleWatchProvider: NSObject, WearableProvider, WCSessionDelegate {
         }
     }
 
+    /// Testtik met bevestiging van de watch. Geeft een Nederlandse statusmelding terug.
+    func testNudge(_ intensity: NudgeIntensity) async -> String {
+        guard let s = session else { return "Deze iPhone ondersteunt geen Apple Watch-verbinding." }
+        if s.activationState != .activated { s.activate(); return "Verbinding met de watch wordt opgestart. Probeer over enkele seconden opnieuw." }
+        if !s.isPaired { return "Er is geen Apple Watch gekoppeld met deze iPhone." }
+        if !s.isWatchAppInstalled {
+            return "De Snoredle-app staat nog niet op je watch. Open op je iPhone de Watch-app › Beschikbare apps › Snoredle › Installeer."
+        }
+        if !s.isReachable {
+            return "Je watch is niet bereikbaar. Open Snoredle op je watch (scherm aan) en probeer opnieuw."
+        }
+        guard let data = try? WatchMessage.nudge(intensity: intensity).encoded() else { return "Interne fout." }
+        return await withCheckedContinuation { cont in
+            var done = false
+            s.sendMessageData(data, replyHandler: { _ in
+                if !done { done = true; cont.resume(returning: "Tikje gegeven ✓") }
+            }, errorHandler: { error in
+                if !done { done = true; cont.resume(returning: "Versturen mislukt: \(error.localizedDescription)") }
+            })
+        }
+    }
+
     // MARK: ontvangen
     private func handle(_ data: Data) {
         guard let msg = try? WatchMessage.decode(data) else { return }

@@ -43,6 +43,10 @@ final class WatchConnector: NSObject, WCSessionDelegate {
         Task { @MainActor in NightTracker.shared.handle(msg) }
     }
     func session(_ s: WCSession, didReceiveMessageData d: Data) { handle(d) }
+    func session(_ s: WCSession, didReceiveMessageData d: Data, replyHandler: @escaping (Data) -> Void) {
+        handle(d)
+        replyHandler(Data("ok".utf8))
+    }
     func session(_ s: WCSession, didReceiveUserInfo info: [String: Any] = [:]) {
         if let d = info["msg"] as? Data { handle(d) }
     }

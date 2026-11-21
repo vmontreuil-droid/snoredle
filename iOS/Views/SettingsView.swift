@@ -5,6 +5,8 @@ struct SettingsView: View {
     @EnvironmentObject var hub: WearableHub
     @EnvironmentObject var store: StoreManager
     @State private var showCalibration = false
+    @State private var nudgeResult: String?
+    @State private var testing = false
 
     var body: some View {
         NavigationStack {
@@ -50,7 +52,16 @@ struct SettingsView: View {
                         Stepper("Na \(Int(s.nudgeAfterSeconds)) s snurken", value: $s.nudgeAfterSeconds, in: 5...120, step: 5)
                         Stepper("Pauze \(Int(s.nudgeCooldownMinutes)) min tussen tikjes", value: $s.nudgeCooldownMinutes, in: 1...30)
                         Stepper("Eerste \(s.nudgeQuietFirstMinutes) min geen tikjes", value: $s.nudgeQuietFirstMinutes, in: 0...90, step: 5)
-                        Button("Test tikje") { hub.nudge(s.nudgeIntensity) }
+                        Button {
+                            testing = true
+                            Task { nudgeResult = await hub.testNudge(s.nudgeIntensity); testing = false }
+                        } label: {
+                            HStack { Text("Test tikje"); if testing { Spacer(); ProgressView() } }
+                        }
+                        if let nudgeResult {
+                            Text(nudgeResult).font(.footnote)
+                                .foregroundStyle(nudgeResult.hasSuffix("✓") ? .green : .orange)
+                        }
                     }
                     Stepper("Houding meten elke \(Int(s.positionIntervalSeconds)) s", value: $s.positionIntervalSeconds, in: 5...60, step: 5)
                     Button(hub.profile.isComplete ? "Opnieuw kalibreren" : "Houdingen kalibreren") { showCalibration = true }

@@ -92,6 +92,9 @@ jobs:
             -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
             -authenticationKeyID $ASC_KEY_ID -authenticationKeyIssuerID $ASC_ISSUER_ID \
             archive
+      - name: Controle watch-app in pakket
+        run: |
+          ls -la "$RUNNER_TEMP/Snoredle.xcarchive/Products/Applications/Snoredle.app/Watch" || echo "::warning::GEEN watch-app in het pakket"
       - name: Uploaden naar App Store Connect / TestFlight
         run: |
           sed "s/TEAM_ID_PLACEHOLDER/$TEAM_ID/" ci/ExportOptions.plist > $RUNNER_TEMP/ExportOptions.plist

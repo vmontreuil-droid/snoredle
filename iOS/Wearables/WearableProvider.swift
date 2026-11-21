@@ -73,6 +73,13 @@ final class WearableHub: ObservableObject {
     func start(id: UUID, settings: WatchSettings) { providers.forEach { $0.startSession(id: id, settings: settings) } }
     func stop(id: UUID) { providers.forEach { $0.stopSession(id: id) } }
     func nudge(_ i: NudgeIntensity) { active.filter { $0.capabilities.contains(.haptics) }.forEach { $0.nudge(i) } }
+    func testNudge(_ i: NudgeIntensity) async -> String {
+        if let watch = providers.compactMap({ $0 as? AppleWatchProvider }).first {
+            return await watch.testNudge(i)
+        }
+        return "Geen watch met trilfunctie gevonden."
+    }
+
     func calibrate(_ pos: SleepPosition) { active.forEach { $0.calibrate(pos) } }
 
     private func handle(_ e: WearableEvent, from source: String) {
