@@ -24,7 +24,7 @@ enum Achievements {
         return n
     }
 
-    static func badges(_ all: [SleepSession]) -> [Badge] {
+    @MainActor static func badges(_ all: [SleepSession]) -> [Badge] {
         let done = all.filter { $0.end != nil && $0.duration > 2 * 3600 }.sorted { $0.start < $1.start }
         let s = streak(done)
         let quiet = done.filter { $0.snoreScore < 10 }.count
