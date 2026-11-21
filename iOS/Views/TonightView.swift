@@ -86,7 +86,7 @@ struct TonightView: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
-                .padding(.bottom, 24)
+                .padding(.bottom, 40)
             }
             .scrollIndicators(.hidden)
             .background(NightBackground())
@@ -108,7 +108,7 @@ struct TonightView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(greeting)
                     .font(.system(size: 34, weight: .bold, design: .rounded))
-                Text(Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide)).capitalized)
+                Text(Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide).locale(Locale(identifier: "nl_BE"))).capitalized)
                     .font(.subheadline).foregroundStyle(.secondary)
             }
             Spacer()
@@ -393,7 +393,7 @@ struct WatchStatusPill: View {
     }
 
     private func subtitle(connected: Bool, needsCalibration: Bool) -> String {
-        if !connected { return "Alleen geluid wordt gemeten" }
+        if !connected { return hub.watchHint.map { "\($0) · nu alleen geluid" } ?? "Alleen geluid wordt gemeten" }
         if needsCalibration { return "Tik om je slaaphoudingen te kalibreren" }
         return "Houding, hartslag en tikjes actief"
     }

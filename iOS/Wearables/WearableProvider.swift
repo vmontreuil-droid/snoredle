@@ -32,6 +32,7 @@ enum WearableEvent {
     case vital(VitalKind, Double, Date)
     case calibrated(SleepPosition, Vector3)
     case status(WatchStatus)
+    case availabilityChanged
 }
 
 /// Lege standaardimplementaties voor providers die iets niet kunnen.
@@ -67,6 +68,10 @@ final class WearableHub: ObservableObject {
 
     var active: [WearableProvider] { providers.filter(\.isAvailable) }
     var hasPositionSource: Bool { active.contains { $0.capabilities.contains(.position) } }
+    /// Uitleg waarom er geen watch actief is (alleen Apple Watch).
+    var watchHint: String? {
+        providers.compactMap { ($0 as? AppleWatchProvider)?.statusHint }.first
+    }
     var hasHaptics: Bool { active.contains { $0.capabilities.contains(.haptics) } }
 
     // Start/stop gaat naar álle providers: sommige (Bluetooth) worden pas beschikbaar na verbinden.
@@ -91,6 +96,7 @@ final class WearableHub: ObservableObject {
             Self.save(profile)
             active.forEach { $0.send(profile: profile) }
         case .status(let s): watchStatus = s
+        case .availabilityChanged: objectWillChange.send()
         default: break
         }
         events.send((source, e))

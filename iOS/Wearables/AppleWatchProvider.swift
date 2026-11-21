@@ -95,7 +95,20 @@ final class AppleWatchProvider: NSObject, WearableProvider, WCSessionDelegate {
         // Batch van posities die offline verzameld werden
         if let batch = userInfo["batch"] as? [Data] { batch.forEach(handle) }
     }
-    func session(_ session: WCSession, activationDidCompleteWith state: WCSessionActivationState, error: Error?) {}
+    func session(_ session: WCSession, activationDidCompleteWith state: WCSessionActivationState, error: Error?) {
+        subject.send(.availabilityChanged)
+    }
+    func sessionWatchStateDidChange(_ session: WCSession) { subject.send(.availabilityChanged) }
+    func sessionReachabilityDidChange(_ session: WCSession) { subject.send(.availabilityChanged) }
+
+    /// Korte uitleg voor op het startscherm.
+    var statusHint: String? {
+        guard let s = session else { return "Deze iPhone ondersteunt geen Apple Watch" }
+        if s.activationState != .activated { return "Verbinding met je watch maken…" }
+        if !s.isPaired { return "Geen Apple Watch gekoppeld" }
+        if !s.isWatchAppInstalled { return "Installeer Snoredle op je watch via de Watch-app" }
+        return nil
+    }
     func sessionDidBecomeInactive(_ session: WCSession) {}
     func sessionDidDeactivate(_ session: WCSession) { session.activate() }
 }
