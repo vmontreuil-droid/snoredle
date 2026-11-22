@@ -141,6 +141,8 @@ struct SettingsView: View {
                     Text("Via Gezondheid werken o.a. Garmin, Withings, Oura, Polar en Zepp mee (hartslag, SpO₂, ademhaling). Bluetooth-hartslag wordt actief na herstart van de app.")
                 }
 
+                BackupSection()
+
                 Section("Over") {
                     Text("Snoredle is geen medisch hulpmiddel. Alle audio blijft op je toestel.").font(.footnote)
                     Link("Privacybeleid", destination: URL(string: "https://example.com/privacy")!)

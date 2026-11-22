@@ -70,6 +70,9 @@ struct DoctorReportView: View {
                     Text(s.factors.map(\.emoji).joined()).frame(maxWidth: .infinity, alignment: .leading)
                 }.font(.caption)
             }
+            if let sb = ApneaCheckView.savedScore {
+                Text("STOP-BANG-vragenlijst: \(sb)/8 — \(ApneaCheckView.result(score: sb).0)").font(.subheadline.bold())
+            }
             Divider()
             Text("Snoredle is geen medisch hulpmiddel en stelt geen diagnose. 'Mogelijke ademstops' zijn stiltes van ≥10 s tijdens snurken, gemeten met de microfoon. Bespreek dit rapport met je arts; een slaaponderzoek (polysomnografie) is nodig voor een diagnose van slaapapneu.")
                 .font(.caption2).foregroundStyle(.secondary)

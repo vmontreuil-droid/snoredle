@@ -78,6 +78,19 @@ struct TrendsView: View {
                         Text("Gemiddeld \(avg) · \(done.count) nachten").font(.caption).foregroundStyle(.secondary)
                     }
 
+                    VStack(spacing: 10) {
+                        NavigationLink { CoachView() } label: {
+                            toolRow("Coach", "Persoonlijke tips en het 14-dagenprogramma", "figure.mind.and.body")
+                        }
+                        NavigationLink { CompareView() } label: {
+                            toolRow("Nachten vergelijken", "Twee nachten naast elkaar", "rectangle.split.2x1")
+                        }
+                        NavigationLink { ApneaCheckView() } label: {
+                            toolRow("Slaapapneu-check", ApneaCheckView.savedScore.map { "Score \($0)/8 · \(ApneaCheckView.result(score: $0).0)" } ?? "Korte vragenlijst (STOP-BANG)", "stethoscope")
+                        }
+                    }
+                    .buttonStyle(.plain)
+
                     box("Uitdagingen") {
                         let streak = Achievements.streak(sessions.filter { $0.end != nil })
                         HStack(spacing: 10) {
@@ -143,6 +156,20 @@ struct TrendsView: View {
             .background(NightBackground())
             .navigationTitle("Inzichten")
         }
+    }
+
+    private func toolRow(_ t: String, _ s: String, _ icon: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon).font(.title3).foregroundStyle(Theme.accent).frame(width: 32)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(t).font(.subheadline.weight(.semibold))
+                Text(s).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+        }
+        .padding(14)
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: 16))
     }
 
     private func box<C: View>(_ t: String, @ViewBuilder _ c: () -> C) -> some View {
