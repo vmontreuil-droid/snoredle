@@ -13,6 +13,7 @@ struct SessionDetailView: View {
     @State private var showExplorer = false
     @State private var picked: Date?
     @State private var editFactors = false
+    @State private var soundFilter: NightSoundKind?
     @Query(sort: \SleepSession.start) private var allSessions: [SleepSession]
 
     var body: some View {
@@ -293,14 +294,24 @@ struct SessionDetailView: View {
         return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 16) {
                 ForEach(NightSoundKind.allCases.filter { byKind[$0] != nil }, id: \.self) { k in
-                    VStack(spacing: 4) {
-                        Image(systemName: k.symbol).foregroundStyle(Theme.accent)
-                        Text("\(byKind[k]?.count ?? 0)").font(.headline)
-                        Text(k.label).font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                    }.frame(maxWidth: .infinity)
+                    let on = soundFilter == k
+                    Button { withAnimation(.snappy) { soundFilter = on ? nil : k } } label: {
+                        VStack(spacing: 4) {
+                            Image(systemName: k.symbol).foregroundStyle(on ? Theme.night : Theme.accent)
+                            Text("\(byKind[k]?.count ?? 0)").font(.headline)
+                            Text(k.label).font(.caption2).multilineTextAlignment(.center)
+                                .foregroundStyle(on ? Theme.night : .secondary)
+                        }
+                        .frame(maxWidth: .infinity).padding(.vertical, 8)
+                        .background(on ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.white.opacity(0.04)),
+                                    in: RoundedRectangle(cornerRadius: 14))
+                        .foregroundStyle(on ? Theme.night : .primary)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            ForEach(session.nightSounds.sorted { $0.start < $1.start }.prefix(store.isPlus ? 200 : 5)) { n in
+            ForEach(session.nightSounds.filter { soundFilter == nil || $0.kind == soundFilter }
+                        .sorted { $0.start < $1.start }.prefix(store.isPlus ? 500 : 5)) { n in
                 HStack {
                     Image(systemName: n.kind.symbol).frame(width: 22).foregroundStyle(.secondary)
                     Text(n.start.formatted(date: .omitted, time: .shortened)).font(.subheadline.monospacedDigit())

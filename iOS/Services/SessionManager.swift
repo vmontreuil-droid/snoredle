@@ -244,7 +244,7 @@ final class SessionManager: ObservableObject {
                     t.last = f.at; t.conf.append(conf); soundTracks[kind] = t
                 } else {
                     var clip: String?
-                    if kind == .talking, settings.saveTalkClips, episodeStart == nil,
+                    if kind != .gasp, settings.saveTalkClips, episodeStart == nil,
                        !soundTracks.values.contains(where: { $0.clip != nil }),
                        clipsThisNight < settings.maxClipsPerNight, let fmt = detector.format {
                         clip = clips.beginClip(format: fmt)

@@ -89,7 +89,7 @@ struct SettingsView: View {
                 Section {
                     Toggle("Andere geluiden herkennen", isOn: $s.detectNightSounds)
                     if s.detectNightSounds {
-                        Toggle("Praten in je slaap opnemen", isOn: $s.saveTalkClips)
+                        Toggle("Opnemen (praten, lachen, hoesten…)", isOn: $s.saveTalkClips)
                     }
                 } header: { Text("Nachtgeluiden") } footer: {
                     Text("Praten, hoesten, niezen, lachen en naar adem happen.")
