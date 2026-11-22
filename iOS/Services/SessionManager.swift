@@ -116,7 +116,6 @@ final class SessionManager: ObservableObject {
         detector.stop()
         AlarmService.shared.disarm()
         SleepSoundController.shared.stop(fade: 0.5)
-        LiveActivityService.shared.end(score: nil)
         hub.stop(id: session.id)
         session.end = .now
 

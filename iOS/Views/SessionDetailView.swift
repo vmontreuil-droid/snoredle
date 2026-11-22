@@ -1,6 +1,7 @@
 import SwiftUI
 import Charts
 import AVFoundation
+import Accelerate
 
 struct SessionDetailView: View {
     @Bindable var session: SleepSession
@@ -8,6 +9,8 @@ struct SessionDetailView: View {
     @StateObject private var player = ClipPlayer()
     @State private var showOnlyFavorites = false
     @FocusState private var noteFocused: Bool
+    @State private var showExplorer = false
+    @State private var picked: Date?
 
     var body: some View {
         ScrollView {
@@ -17,7 +20,15 @@ struct SessionDetailView: View {
                     Label(note, systemImage: "alarm.fill").font(.footnote).foregroundStyle(Theme.accent)
                 }
                 if let h = highlight { card("Hoogtepunt van de nacht") { highlightRow(h) } }
-                card("Volume en snurken") { loudnessChart }
+                card("Volume en snurken") {
+                    loudnessChart
+                    pickedRow
+                    Button { showExplorer = true } label: {
+                        Label("Inzoomen en alle details", systemImage: "arrow.up.left.and.arrow.down.right")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .padding(.top, 4)
+                }
                 if !session.stages.isEmpty { card("Slaapfasen") { stagesChart } }
                 if !session.nightSounds.isEmpty { card("Andere geluiden (\(session.nightSounds.count))") { nightSoundsList } }
                 if !session.positions.isEmpty { card("Slaaphouding") { positionSection } }
@@ -42,7 +53,29 @@ struct SessionDetailView: View {
         .navigationTitle(session.start.formatted(.dateTime.weekday(.wide).day().month()))
         .navigationBarTitleDisplayMode(.inline)
         .scrollDismissesKeyboard(.interactively)
+        .fullScreenCover(isPresented: $showExplorer) { NightExplorerView(session: session, player: player) }
+        .alert("Fragment", isPresented: Binding(get: { player.error != nil }, set: { if !$0 { player.error = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(player.error ?? "") }
+        .onDisappear { player.stop() }
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    ShareLink(item: NightShareCard.image(for: session),
+                              preview: SharePreview("Mijn nacht met Snoredle", image: NightShareCard.image(for: session))) {
+                        Label("Als afbeelding", systemImage: "photo")
+                    }
+                    ShareLink(item: ExportService.pdf([session])) {
+                        Label("Rapport (PDF)", systemImage: "doc.richtext")
+                    }
+                    if let h = highlight {
+                        ShareLink(item: ClipRecorder.url(for: h.clip),
+                                  message: Text("Zo klonk ik vannacht 😴 — gemeten met Snoredle")) {
+                            Label("Luidste snurk (geluid)", systemImage: "waveform")
+                        }
+                    }
+                } label: { Image(systemName: "square.and.arrow.up") }
+            }
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
                 Button("Klaar") { noteFocused = false }.fontWeight(.semibold)
@@ -81,10 +114,48 @@ struct SessionDetailView: View {
                               yStart: .value("", 0), yEnd: .value("", e.peakDecibel))
                     .foregroundStyle(Theme.color(e.intensity))
             }
+            if let p = picked {
+                RuleMark(x: .value("Gekozen", p)).foregroundStyle(Theme.accent).lineStyle(StrokeStyle(lineWidth: 1.5))
+            }
         }
         .chartXAxis { AxisMarks(values: .stride(by: .hour)) { AxisValueLabel(format: .dateTime.hour()) } }
         .chartYAxisLabel("dB")
+        .chartXSelection(value: $picked)
+        .chartOverlay { _ in EmptyView() }
+        .overlay(alignment: .topLeading) {
+            if picked == nil {
+                Text("Tik op de grafiek").font(.caption2).foregroundStyle(.tertiary).padding(4)
+            }
+        }
         .frame(height: 180)
+    }
+
+    /// Info over het aangeduide moment, met afspeelknop.
+    @ViewBuilder private var pickedRow: some View {
+        if let t = picked {
+            let e = session.events.min { abs($0.start.timeIntervalSince(t)) < abs($1.start.timeIntervalSince(t)) }
+            let near = e.map { abs($0.start.timeIntervalSince(t)) < 300 || ($0.start...$0.end).contains(t) } ?? false
+            HStack(spacing: 12) {
+                if near, let e, let c = e.clipFileName {
+                    Button { player.toggle(ClipRecorder.url(for: c)) } label: {
+                        Image(systemName: player.playingURL?.lastPathComponent == c ? "stop.circle.fill" : "play.circle.fill")
+                            .font(.system(size: 34)).foregroundStyle(Theme.accent)
+                    }
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(t.formatted(date: .omitted, time: .shortened)).font(.subheadline.weight(.semibold)).monospacedDigit()
+                    if near, let e {
+                        Text("Snurken om \(e.start.formatted(date: .omitted, time: .shortened)) · \(e.intensity.label) · \(Int(e.peakDecibel)) dB · \(e.position.label)")
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        Text("Geen snurken rond dit moment").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+            }
+            .padding(10)
+            .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 14))
+        }
     }
 
     private var positionSection: some View {
@@ -313,20 +384,70 @@ struct SessionDetailView: View {
 }
 
 @MainActor
-final class ClipPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
+final class ClipPlayer: NSObject, ObservableObject {
     @Published var playingURL: URL?
-    private var player: AVAudioPlayer?
+    @Published var error: String?
+    private let engine = AVAudioEngine()
+    private let node = AVAudioPlayerNode()
+    private var attached = false
+    private var token = 0
 
+    /// Speelt een fragment af en normaliseert het volume (oude fragmenten zijn erg stil opgenomen).
     func toggle(_ url: URL) {
-        if playingURL == url { player?.stop(); playingURL = nil; return }
-        try? AVAudioSession.sharedInstance().setCategory(.playback)
-        try? AVAudioSession.sharedInstance().setActive(true)
-        player = try? AVAudioPlayer(contentsOf: url)
-        player?.delegate = self
-        player?.play()
-        playingURL = player == nil ? nil : url
+        if playingURL == url { stop(); return }
+        stop()
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            error = "Dit fragment is niet meer beschikbaar (automatisch opgeruimd of niet bewaard)."
+            return
+        }
+        do {
+            let file = try AVAudioFile(forReading: url)
+            let format = file.processingFormat
+            guard file.length > 0,
+                  let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(file.length)) else {
+                error = "Dit fragment is leeg."; return
+            }
+            try file.read(into: buffer)
+            Self.normalize(buffer)
+
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .default, options: [.duckOthers])
+            try session.setActive(true)
+
+            if !attached { engine.attach(node); attached = true }
+            engine.disconnectNodeOutput(node)
+            engine.connect(node, to: engine.mainMixerNode, format: format)
+            if !engine.isRunning { try engine.start() }
+
+            token += 1
+            let my = token
+            node.scheduleBuffer(buffer, at: nil, options: []) { [weak self] in
+                Task { @MainActor in if self?.token == my { self?.playingURL = nil } }
+            }
+            node.play()
+            playingURL = url
+        } catch {
+            self.error = "Afspelen lukt niet: \(error.localizedDescription)"
+        }
     }
-    nonisolated func audioPlayerDidFinishPlaying(_ p: AVAudioPlayer, successfully: Bool) {
-        Task { @MainActor in self.playingURL = nil }
+
+    func stop() {
+        token += 1
+        node.stop()
+        playingURL = nil
+    }
+
+    private static func normalize(_ b: AVAudioPCMBuffer) {
+        guard let d = b.floatChannelData else { return }
+        let n = vDSP_Length(b.frameLength)
+        var peak: Float = 0
+        for ch in 0..<Int(b.format.channelCount) {
+            var m: Float = 0
+            vDSP_maxmgv(d[ch], 1, &m, n)
+            peak = max(peak, m)
+        }
+        guard peak > 0.0001 else { return }
+        var gain = min(40, 0.9 / peak)
+        for ch in 0..<Int(b.format.channelCount) { vDSP_vsmul(d[ch], 1, &gain, d[ch], 1, n) }
     }
 }

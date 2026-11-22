@@ -1,4 +1,5 @@
 import AVFoundation
+import Accelerate
 
 /// Bewaart audiofragmenten van snurkepisodes, inclusief enkele seconden vóór de start
 /// (pre-roll), zodat je 's ochtends kunt terugluisteren.
@@ -12,6 +13,24 @@ final class ClipRecorder {
     private var writtenSeconds: Double = 0
     private var currentName: String?
     private let lock = NSLock()
+
+    /// De microfoon neemt op zonder automatische versterking (voor correcte dB-metingen),
+    /// waardoor fragmenten erg stil zijn. Voor het fragment versterken we ×8 met zachte begrenzing.
+    static var clipGain: Float = 8
+
+    static func amplified(_ src: AVAudioPCMBuffer) -> AVAudioPCMBuffer {
+        guard let out = AVAudioPCMBuffer(pcmFormat: src.format, frameCapacity: src.frameLength),
+              let i = src.floatChannelData, let o = out.floatChannelData else { return src }
+        out.frameLength = src.frameLength
+        let n = Int(src.frameLength)
+        for ch in 0..<Int(src.format.channelCount) {
+            var g = clipGain
+            vDSP_vsmul(i[ch], 1, &g, o[ch], 1, vDSP_Length(n))
+            var count = Int32(n)
+            vvtanhf(o[ch], o[ch], &count)          // zachte begrenzing, geen vervorming bij luide snurken
+        }
+        return out
+    }
 
     static var clipsDirectory: URL {
         let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -28,7 +47,7 @@ final class ClipRecorder {
         let seconds = Double(buffer.frameLength) / buffer.format.sampleRate
         if let file {
             if writtenSeconds < maxClipSeconds {
-                try? file.write(from: buffer)
+                try? file.write(from: Self.amplified(buffer))
                 writtenSeconds += seconds
             }
         } else {
@@ -56,7 +75,7 @@ final class ClipRecorder {
         do {
             let f = try AVAudioFile(forWriting: Self.url(for: name), settings: settings,
                                     commonFormat: .pcmFormatFloat32, interleaved: false)
-            for b in ring { try f.write(from: b) }
+            for b in ring { try f.write(from: Self.amplified(b)) }
             writtenSeconds = ringDuration
             ring.removeAll(); ringDuration = 0
             file = f; currentName = name

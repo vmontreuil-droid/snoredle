@@ -42,7 +42,16 @@ final class LiveActivityService {
         s.finishedScore = score
         s.isSnoring = false
         self.activity = nil
-        Task { await activity.end(.init(state: s, staleDate: nil), dismissalPolicy: .after(.now.addingTimeInterval(3600))) }
+        Task { await activity.end(.init(state: s, staleDate: nil), dismissalPolicy: .after(.now.addingTimeInterval(15 * 60))) }
+    }
+
+    /// Ruimt weergaven op die van een vorige (afgebroken) nacht zijn blijven hangen.
+    func cleanupStale(isRecording: Bool) {
+        guard !isRecording else { return }
+        activity = nil
+        for a in Activity<SnoreActivityAttributes>.activities {
+            Task { await a.end(nil, dismissalPolicy: .immediate) }
+        }
     }
 }
 
