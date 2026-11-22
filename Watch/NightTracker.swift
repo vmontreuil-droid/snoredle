@@ -139,7 +139,7 @@ final class NightTracker: NSObject, ObservableObject {
                 WKInterfaceDevice.current().play(.success)
             }
             calibrating = nil
-            if !isTracking { motion.stopDeviceMotionUpdates() }
+            if !isTracking && guidedStep == nil { motion.stopDeviceMotionUpdates() }
         }
     }
 
@@ -172,10 +172,24 @@ final class NightTracker: NSObject, ObservableObject {
     @Published private(set) var guidedCountdown = 0
 
     func runGuidedCalibration() {
+        guard guidedStep == nil else { return }
+        // Houdt de app actief met het scherm uit (anders pauzeert watchOS de meting).
+        let ownSession = !isTracking
+        if ownSession { startWorkout() }
+        if !motion.isDeviceMotionActive { startMotion() }
         Task {
+            defer {
+                if ownSession && !isTracking {
+                    workout?.end()
+                    let b = builder
+                    b?.endCollection(withEnd: .now) { _, _ in b?.discardWorkout() }
+                    workout = nil; builder = nil
+                    motion.stopDeviceMotionUpdates()
+                }
+            }
             for p in SleepPosition.calibratable {
                 guidedStep = p
-                WKInterfaceDevice.current().play(.start)
+                for _ in 0..<2 { WKInterfaceDevice.current().play(.notification); try? await Task.sleep(for: .milliseconds(600)) }
                 for i in stride(from: 10, to: 0, by: -1) {
                     guidedCountdown = i
                     if i == 5 { calibrate(p) }
