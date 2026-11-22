@@ -1,73 +1,198 @@
 import SwiftUI
 
-/// Wekkerkaart op het startscherm.
+/// Wekkerkaart op het startscherm: eerstvolgende wekker + toegang tot de lijst.
 struct AlarmCard: View {
-    @EnvironmentObject var settings: AppSettings
-    @State private var permissionDenied = false
+    @ObservedObject var alarms = AlarmService.shared
+    @State private var showList = false
+
+    var body: some View {
+        Button { showList = true } label: {
+            GlassCard {
+                HStack(spacing: 12) {
+                    let next = alarms.nextItem
+                    ZStack {
+                        Circle().fill(next != nil ? Theme.accent.opacity(0.18) : .white.opacity(0.06))
+                        Image(systemName: next != nil ? "alarm.fill" : "alarm")
+                            .foregroundStyle(next != nil ? Theme.accent : .secondary)
+                    }.frame(width: 38, height: 38)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Wekkers").font(.subheadline.weight(.semibold))
+                        Text(subtitle).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if let (item, date) = next {
+                        VStack(alignment: .trailing, spacing: 0) {
+                            Text(item.timeText).font(.system(.title2, design: .rounded).weight(.semibold)).monospacedDigit()
+                            Text(dayWord(date)).font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .sheet(isPresented: $showList) { AlarmsView() }
+    }
+
+    private var subtitle: String {
+        let on = alarms.alarms.filter(\.enabled).count
+        if alarms.alarms.isEmpty { return "Tik om een wekker te zetten" }
+        if on == 0 { return "Alle wekkers staan uit" }
+        if let (item, _) = alarms.nextItem, item.smart { return "\(on) actief · slim: tot \(item.smartWindow) min vroeger" }
+        return "\(on) actief"
+    }
+
+    private func dayWord(_ d: Date) -> String {
+        let cal = Calendar.current
+        if cal.isDateInToday(d) { return "vandaag" }
+        if cal.isDateInTomorrow(d) { return "morgen" }
+        return d.formatted(.dateTime.weekday(.wide).locale(Locale(identifier: "nl_BE")))
+    }
+}
+
+/// Lijst met alle wekkers.
+struct AlarmsView: View {
+    @ObservedObject var service = AlarmService.shared
+    @Environment(\.dismiss) private var dismiss
+    @State private var editing: AlarmItem?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if service.permissionDenied {
+                    Label("Geef Snoredle toegang tot wekkers in Instellingen › Apps › Snoredle.",
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.footnote).foregroundStyle(.orange)
+                }
+                ForEach(service.alarms) { a in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(a.timeText).font(.system(size: 44, weight: .light, design: .rounded)).monospacedDigit()
+                                .foregroundStyle(a.enabled ? .primary : .secondary)
+                            HStack(spacing: 6) {
+                                if !a.label.isEmpty { Text(a.label) }
+                                Text(a.daysText)
+                                if a.smart { Label("Slim \(a.smartWindow)′", systemImage: "sparkles").foregroundStyle(Theme.accent) }
+                            }
+                            .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Toggle("Aan", isOn: Binding(get: { a.enabled }, set: { service.setEnabled(a, $0) }))
+                            .labelsHidden().tint(Theme.accent)
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture { editing = a }
+                    .listRowBackground(Color.white.opacity(0.05))
+                }
+                .onDelete { idx in idx.map { service.alarms[$0] }.forEach(service.delete) }
+
+                if service.alarms.isEmpty {
+                    Text("Nog geen wekkers. Tik op + om er een te zetten.")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                        .listRowBackground(Color.clear)
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(NightBackground())
+            .navigationTitle("Wekkers")
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { Button("Klaar") { dismiss() } }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { editing = AlarmItem(minutes: service.alarms.last.map { $0.minutes + 15 } ?? 7 * 60) } label: {
+                        Image(systemName: "plus")
+                    }
+                }
+            }
+            .sheet(item: $editing) { a in AlarmEditor(item: a, isNew: !service.alarms.contains { $0.id == a.id }) }
+            .task { _ = await service.requestPermission() }
+        }
+    }
+}
+
+/// Eén wekker instellen.
+struct AlarmEditor: View {
+    @State var item: AlarmItem
+    let isNew: Bool
+    @Environment(\.dismiss) private var dismiss
 
     private var time: Binding<Date> {
         Binding(
-            get: {
-                Calendar.current.date(bySettingHour: settings.alarmMinutes / 60, minute: settings.alarmMinutes % 60,
-                                      second: 0, of: .now) ?? .now
-            },
+            get: { Calendar.current.date(bySettingHour: item.hour, minute: item.minute, second: 0, of: .now) ?? .now },
             set: { d in
                 let c = Calendar.current.dateComponents([.hour, .minute], from: d)
-                settings.alarmMinutes = (c.hour ?? 7) * 60 + (c.minute ?? 0)
+                item.minutes = (c.hour ?? 7) * 60 + (c.minute ?? 0)
             })
     }
 
     var body: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 12) {
-                    ZStack {
-                        Circle().fill(settings.alarmEnabled ? Theme.accent.opacity(0.18) : .white.opacity(0.06))
-                        Image(systemName: settings.alarmEnabled ? "alarm.fill" : "alarm")
-                            .foregroundStyle(settings.alarmEnabled ? Theme.accent : .secondary)
-                    }.frame(width: 38, height: 38)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Wekker").font(.subheadline.weight(.semibold))
-                        Text(subtitle).font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Toggle("Wekker", isOn: Binding(get: { settings.alarmEnabled }, set: { on in
-                        settings.alarmEnabled = on
-                        if on { Task { permissionDenied = !(await AlarmService.shared.requestPermission()) } }
-                    }))
-                    .labelsHidden().tint(Theme.accent)
-                }
-                if settings.alarmEnabled {
-                    HStack {
-                        DatePicker("Wektijd", selection: time, displayedComponents: .hourAndMinute)
-                            .labelsHidden()
-                            .datePickerStyle(.compact)
-                        Spacer()
-                        Picker("Slim venster", selection: $settings.smartWindowMinutes) {
-                            Text("Exact").tag(0)
-                            Text("Slim 10′").tag(10)
-                            Text("Slim 20′").tag(20)
-                            Text("Slim 30′").tag(30)
+        NavigationStack {
+            Form {
+                DatePicker("Tijd", selection: time, displayedComponents: .hourAndMinute)
+                    .datePickerStyle(.wheel).labelsHidden()
+                    .frame(maxWidth: .infinity)
+
+                Section("Herhalen") {
+                    HStack(spacing: 6) {
+                        ForEach(AlarmItem.dayOrder, id: \.self) { d in
+                            let on = item.days.contains(d)
+                            Button {
+                                if on { item.days.remove(d) } else { item.days.insert(d) }
+                            } label: {
+                                Text(AlarmItem.shortNames[d] ?? "")
+                                    .font(.footnote.weight(.semibold))
+                                    .frame(width: 38, height: 38)
+                                    .background(on ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.white.opacity(0.08)), in: Circle())
+                                    .foregroundStyle(on ? Theme.night : .primary)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .pickerStyle(.menu).tint(Theme.accent)
                     }
-                    if permissionDenied {
-                        Label("Geef Snoredle toegang tot wekkers in Instellingen › Snoredle.",
-                              systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption).foregroundStyle(.orange)
+                    .frame(maxWidth: .infinity)
+                    HStack {
+                        Button("Werkdagen") { item.days = [2, 3, 4, 5, 6] }
+                        Spacer()
+                        Button("Weekend") { item.days = [1, 7] }
+                        Spacer()
+                        Button("Elke dag") { item.days = [] }
+                    }
+                    .font(.footnote).buttonStyle(.borderless)
+                    Text(item.daysText).font(.caption).foregroundStyle(.secondary)
+                }
+
+                Section("Naam") {
+                    TextField("bv. Werk, Reservewekker", text: $item.label)
+                }
+
+                Section {
+                    Toggle("Slimme wekker", isOn: $item.smart).tint(Theme.accent)
+                    if item.smart {
+                        Picker("Venster", selection: $item.smartWindow) {
+                            Text("10 min").tag(10); Text("20 min").tag(20); Text("30 min").tag(30); Text("45 min").tag(45)
+                        }
+                    }
+                } footer: {
+                    Text(item.smart
+                         ? "Tijdens een meting wekt Snoredle je tot \(item.smartWindow) min vroeger, op een moment dat je licht slaapt (je beweegt). Anders gaat hij af om \(item.timeText)."
+                         : "Gaat precies om \(item.timeText) af, ook in stille modus.")
+                }
+
+                if !isNew {
+                    Section {
+                        Button("Wekker verwijderen", role: .destructive) {
+                            AlarmService.shared.delete(item); dismiss()
+                        }
                     }
                 }
             }
+            .navigationTitle(isNew ? "Nieuwe wekker" : "Wekker")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { Button("Annuleer") { dismiss() } }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Bewaar") { item.enabled = true; AlarmService.shared.upsert(item); dismiss() }.fontWeight(.semibold)
+                }
+            }
         }
-        .animation(.snappy, value: settings.alarmEnabled)
-    }
-
-    private var subtitle: String {
-        guard settings.alarmEnabled else { return "Uit — tik om in te stellen" }
-        let end = String(format: "%02d:%02d", settings.alarmMinutes / 60, settings.alarmMinutes % 60)
-        if settings.smartWindowMinutes == 0 { return "Gaat af om \(end), ook in stille modus" }
-        let s = (settings.alarmMinutes - settings.smartWindowMinutes + 1440) % 1440
-        return "Wekt je licht slapend tussen \(String(format: "%02d:%02d", s / 60, s % 60)) en \(end)"
     }
 }
 

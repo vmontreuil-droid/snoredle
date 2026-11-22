@@ -37,6 +37,7 @@ struct SnoredleApp: App {
                 .onAppear {
                     manager.attach(container.mainContext)
                     lock.appLaunched()
+                    Task { await AlarmService.shared.sync() }
                     LiveActivityService.shared.cleanupStale(isRecording: manager.state != .idle)
                     WidgetBridge.publish(context: container.mainContext)
                     NotificationService.shared.refreshWeekly(context: container.mainContext)

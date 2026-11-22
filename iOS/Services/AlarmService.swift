@@ -5,107 +5,222 @@ import UserNotifications
 import AlarmKit
 #endif
 
-/// Wekker die altijd afgaat.
-/// - iOS 26+: Apple's AlarmKit — gaat af zoals de Klok-app, ook in stille modus en Focus,
-///   op het vergrendelscherm en op je Apple Watch.
-/// - Oudere iOS: eigen alarmtoon via de lopende audiosessie (stille knop wordt genegeerd)
-///   + melding + trillen op de watch.
-/// Slimme wekker: binnen het venster vóór de wektijd wekt Snoredle je zodra je beweegt
-/// (licht slapen), anders op de ingestelde tijd.
+/// Eén wekker uit de lijst.
+struct AlarmItem: Codable, Identifiable, Hashable {
+    var id = UUID()
+    var minutes: Int = 7 * 60
+    var enabled = true
+    var days: Set<Int> = []          // Calendar-weekdagen (1 = zondag … 7 = zaterdag); leeg = elke dag
+    var label = ""
+    var smart = false
+    var smartWindow = 20             // minuten
+
+    var hour: Int { minutes / 60 }
+    var minute: Int { minutes % 60 }
+    var timeText: String { String(format: "%02d:%02d", hour, minute) }
+
+    static let dayOrder = [2, 3, 4, 5, 6, 7, 1]                   // ma … zo
+    static let shortNames = [1: "zo", 2: "ma", 3: "di", 4: "wo", 5: "do", 6: "vr", 7: "za"]
+
+    var daysText: String {
+        if days.isEmpty || days.count == 7 { return "Elke dag" }
+        if days == [2, 3, 4, 5, 6] { return "Werkdagen" }
+        if days == [1, 7] { return "Weekend" }
+        return Self.dayOrder.filter { days.contains($0) }.compactMap { Self.shortNames[$0] }.joined(separator: " ")
+    }
+
+    /// Eerstvolgende keer dat deze wekker afgaat.
+    func next(after now: Date = .now) -> Date? {
+        guard enabled else { return nil }
+        let cal = Calendar.current
+        for offset in 0...7 {
+            guard let day = cal.date(byAdding: .day, value: offset, to: now),
+                  let t = cal.date(bySettingHour: hour, minute: minute, second: 0, of: day) else { continue }
+            if t <= now.addingTimeInterval(30) { continue }
+            if days.isEmpty || days.contains(cal.component(.weekday, from: t)) { return t }
+        }
+        return nil
+    }
+}
+
+/// Wekkers die altijd afgaan.
+/// - iOS 26+: Apple's AlarmKit — zoals de Klok-app: ook in stille modus, met Focus, op je Apple Watch,
+///   en ook als Snoredle die nacht niet meet. Herhalende wekkers plant iOS zelf.
+/// - Oudere iOS: meldingen + eigen alarmtoon tijdens een meting (stille knop wordt genegeerd).
+/// Slimme wekker: tijdens een meting wekt Snoredle je binnen het venster zodra je beweegt.
 @MainActor
 final class AlarmService: ObservableObject {
     static let shared = AlarmService()
 
-    @Published private(set) var armedFor: Date?
+    @Published private(set) var alarms: [AlarmItem] = []
+    @Published private(set) var armedFor: Date?            // eerstvolgende wekker tijdens de meting
     @Published private(set) var isRinging = false          // alleen bij de eigen alarmtoon
     @Published private(set) var lastWakeReason: String?
+    @Published private(set) var permissionDenied = false
 
-    /// Wordt aangeroepen als de wekker uitgezet is (meting mag stoppen).
+    /// Wordt aangeroepen als een wekker uitgezet is tijdens een meting (meting mag stoppen).
     var onDismissed: (() -> Void)?
 
     private let settings = AppSettings.shared
     private var fallbackTask: Task<Void, Never>?
     private var nudgeTask: Task<Void, Never>?
-    private var alarmID: UUID?
-    private var sawAlerting = false
     private var updatesTask: Task<Void, Never>?
+    private var alerting = Set<UUID>()
+    private var smartFired = false
+    private var sessionActive = false
     private let tone = SoundSynth()
+    private static let storeKey = "alarms.v2"
 
-    // MARK: Plannen
-
-    /// Volgende keer dat de ingestelde wektijd valt.
-    func nextAlarmDate(from now: Date = .now) -> Date {
-        let cal = Calendar.current
-        var comps = cal.dateComponents([.year, .month, .day], from: now)
-        comps.hour = settings.alarmMinutes / 60
-        comps.minute = settings.alarmMinutes % 60
-        let today = cal.date(from: comps) ?? now
-        return today > now.addingTimeInterval(60) ? today : cal.date(byAdding: .day, value: 1, to: today)!
+    init() {
+        load()
+        observeAlarmKit()
     }
 
+    // MARK: Lijst beheren
+
+    private func load() {
+        if let d = UserDefaults.standard.data(forKey: Self.storeKey),
+           let a = try? JSONDecoder().decode([AlarmItem].self, from: d) {
+            alarms = a
+        } else if settings.alarmEnabled {
+            // Overzetten van de oude enkele wekker.
+            alarms = [AlarmItem(minutes: settings.alarmMinutes, enabled: true, smart: settings.smartWindowMinutes > 0,
+                                smartWindow: max(10, settings.smartWindowMinutes))]
+            save()
+        }
+    }
+
+    private func save() {
+        if let d = try? JSONEncoder().encode(alarms) { UserDefaults.standard.set(d, forKey: Self.storeKey) }
+        settings.alarmEnabled = alarms.contains(where: \.enabled)
+    }
+
+    func upsert(_ item: AlarmItem) {
+        if let i = alarms.firstIndex(where: { $0.id == item.id }) { alarms[i] = item } else { alarms.append(item) }
+        alarms.sort { $0.minutes < $1.minutes }
+        save()
+        Task { await sync() }
+    }
+
+    func delete(_ item: AlarmItem) {
+        alarms.removeAll { $0.id == item.id }
+        save()
+        Task { await sync() }
+    }
+
+    func setEnabled(_ item: AlarmItem, _ on: Bool) {
+        var x = item; x.enabled = on; upsert(x)
+    }
+
+    /// Eerstvolgende wekker (van alle actieve).
+    var nextItem: (AlarmItem, Date)? {
+        alarms.compactMap { a in a.next().map { (a, $0) } }.min { $0.1 < $1.1 }
+    }
+    func nextAlarmDate() -> Date? { nextItem?.1 }
+
     var windowStart: Date? {
-        guard let a = armedFor, settings.smartWindowMinutes > 0 else { return nil }
-        return a.addingTimeInterval(-Double(settings.smartWindowMinutes * 60))
+        guard let (item, date) = nextItem, item.smart, sessionActive else { return nil }
+        return date.addingTimeInterval(-Double(item.smartWindow * 60))
     }
 
     func requestPermission() async -> Bool {
         #if canImport(AlarmKit)
-        if #available(iOS 26.0, *) { return await AlarmKitBackend.authorize() }
-        #endif
-        let granted = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
-        return granted ?? false
-    }
-
-    func arm() async {
-        guard settings.alarmEnabled else { return }
-        let date = nextAlarmDate()
-        armedFor = date
-        lastWakeReason = nil
-        sawAlerting = false
-        await schedule(at: date)
-    }
-
-    func disarm() {
-        cancelScheduled()
-        stopRinging()
-        armedFor = nil
-    }
-
-    private func schedule(at date: Date) async {
-        cancelScheduled()
-        #if canImport(AlarmKit)
-        if #available(iOS 26.0, *), await AlarmKitBackend.authorize() {
-            alarmID = try? await AlarmKitBackend.schedule(at: date, title: "Goedemorgen")
-            if alarmID != nil { observeAlarmKit(); return }
+        if #available(iOS 26.0, *) {
+            let ok = await AlarmKitBackend.authorize()
+            permissionDenied = !ok
+            return ok
         }
         #endif
-        scheduleFallback(at: date)
+        let granted = (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])) ?? false
+        permissionDenied = !granted
+        return granted
     }
 
-    private func cancelScheduled() {
-        fallbackTask?.cancel(); fallbackTask = nil
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["snoredle.alarm"])
+    // MARK: Plannen bij het systeem
+
+    /// Zet alle wekkers opnieuw klaar bij iOS. Veilig om vaak aan te roepen.
+    func sync() async {
         #if canImport(AlarmKit)
-        if #available(iOS 26.0, *), let id = alarmID { AlarmKitBackend.cancel(id) }
+        if #available(iOS 26.0, *) {
+            guard await AlarmKitBackend.authorize() else { permissionDenied = true; return }
+            permissionDenied = false
+            AlarmKitBackend.cancelAll()
+            for a in alarms where a.enabled {
+                try? await AlarmKitBackend.scheduleRepeating(a)
+            }
+            return
+        }
         #endif
-        alarmID = nil
+        scheduleNotifications()
     }
 
-    // MARK: Slimme wekker
+    private func scheduleNotifications() {
+        let center = UNUserNotificationCenter.current()
+        center.getPendingNotificationRequests { reqs in
+            let ours = reqs.map(\.identifier).filter { $0.hasPrefix("snoredle.alarm") }
+            center.removePendingNotificationRequests(withIdentifiers: ours)
+        }
+        for a in alarms where a.enabled {
+            let content = UNMutableNotificationContent()
+            content.title = a.label.isEmpty ? "Goedemorgen ☀️" : a.label
+            content.body = "Tijd om op te staan. Tik om je nachtrapport te bekijken."
+            content.sound = .default
+            content.interruptionLevel = .timeSensitive
+            let days = a.days.isEmpty ? Set(1...7) : a.days
+            for d in days {
+                var c = DateComponents(); c.weekday = d; c.hour = a.hour; c.minute = a.minute
+                center.add(UNNotificationRequest(identifier: "snoredle.alarm.\(a.id).\(d)", content: content,
+                                                 trigger: UNCalendarNotificationTrigger(dateMatching: c, repeats: true)))
+            }
+        }
+    }
 
-    /// Signaal van de watch (beweging) of de microfoon (onrust). Binnen het venster → nu wekken.
+    // MARK: Tijdens een meting
+
+    func arm() async {
+        sessionActive = true
+        smartFired = false
+        lastWakeReason = nil
+        await sync()
+        armedFor = nextAlarmDate()
+        // Op oudere iOS: eigen alarmtoon voor de eerstvolgende wekker.
+        if #unavailable(iOS 26.0), let d = armedFor { scheduleFallbackTone(at: d) }
+    }
+
+    /// Meting gestopt. De wekkers zelf blijven staan (zoals in de Klok-app).
+    func disarm() {
+        sessionActive = false
+        fallbackTask?.cancel(); fallbackTask = nil
+        stopRinging()
+        armedFor = nil
+        if smartFired { Task { await sync() } }        // herhalende wekker na slim wekken terugzetten
+    }
+
+    /// Beweging van de watch: binnen het slimme venster → nu wekken.
     func signal(movement intensity: Double, at now: Date = .now) {
-        guard let start = windowStart, let end = armedFor, !isRinging, alarmID != nil || fallbackTask != nil else { return }
+        guard sessionActive, !smartFired, !isRinging, let (item, end) = nextItem, item.smart else { return }
+        let start = end.addingTimeInterval(-Double(item.smartWindow * 60))
         guard now >= start, now < end.addingTimeInterval(-30) else { return }
         guard intensity >= settings.smartWakeMovementThreshold else { return }
-        lastWakeReason = "Gewekt om \(now.formatted(date: .omitted, time: .shortened)) tijdens lichte slaap (beweging)"
-        Task { await wakeNow() }
+        smartFired = true
+        lastWakeReason = "Gewekt om \(now.formatted(date: .omitted, time: .shortened)) tijdens lichte slaap (gepland \(item.timeText))"
+        Task { await wakeNow(skipping: item) }
     }
 
-    func wakeNow() async {
-        let soon = Date().addingTimeInterval(3)
-        armedFor = soon
-        await schedule(at: soon)
+    private func wakeNow(skipping item: AlarmItem) async {
+        armedFor = .now
+        #if canImport(AlarmKit)
+        if #available(iOS 26.0, *) {
+            // De gewone wekker van vandaag overslaan; morgen staat hij er weer (disarm → sync).
+            AlarmKitBackend.cancel(item.id)
+            if let tomorrow = item.next(after: .now.addingTimeInterval(3600)) {
+                _ = try? await AlarmKitBackend.scheduleOnce(at: tomorrow, title: item.label, id: item.id)
+            }
+            _ = try? await AlarmKitBackend.scheduleOnce(at: .now.addingTimeInterval(3), title: item.label, id: UUID())
+            return
+        }
+        #endif
+        startRinging()
     }
 
     // MARK: AlarmKit-opvolging
@@ -113,22 +228,17 @@ final class AlarmService: ObservableObject {
     private func observeAlarmKit() {
         #if canImport(AlarmKit)
         guard #available(iOS 26.0, *) else { return }
-        updatesTask?.cancel()
         updatesTask = Task { [weak self] in
-            for await alarms in AlarmManager.shared.alarmUpdates {
+            for await list in AlarmManager.shared.alarmUpdates {
                 guard let self else { return }
-                let mine = alarms.first { $0.id == self.alarmID }
-                if mine?.state == .alerting {
-                    if !self.sawAlerting, self.settings.alarmVibrateWatch { self.startWatchNudges() }
-                    self.sawAlerting = true
-                }
-                if mine == nil, self.sawAlerting {
-                    // Uitgezet via het systeem-alarm.
-                    self.sawAlerting = false
-                    self.alarmID = nil
-                    self.armedFor = nil
+                let nowAlerting = Set(list.filter { $0.state == .alerting }.map(\.id))
+                let started = nowAlerting.subtracting(self.alerting)
+                let stopped = self.alerting.subtracting(nowAlerting)
+                self.alerting = nowAlerting
+                if !started.isEmpty, self.sessionActive, self.settings.alarmVibrateWatch { self.startWatchNudges() }
+                if !stopped.isEmpty {
                     self.nudgeTask?.cancel()
-                    self.onDismissed?()
+                    if self.sessionActive { self.onDismissed?() }
                 }
             }
         }
@@ -137,17 +247,8 @@ final class AlarmService: ObservableObject {
 
     // MARK: Eigen alarmtoon (iOS 17–25)
 
-    private func scheduleFallback(at date: Date) {
-        let content = UNMutableNotificationContent()
-        content.title = "Goedemorgen ☀️"
-        content.body = "Tijd om op te staan. Tik om je nachtrapport te bekijken."
-        content.sound = .default
-        content.interruptionLevel = .timeSensitive
-        let comps = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
-        UNUserNotificationCenter.current().add(UNNotificationRequest(
-            identifier: "snoredle.alarm", content: content,
-            trigger: UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)))
-
+    private func scheduleFallbackTone(at date: Date) {
+        fallbackTask?.cancel()
         fallbackTask = Task { [weak self] in
             let wait = date.timeIntervalSinceNow
             if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
@@ -179,19 +280,16 @@ final class AlarmService: ObservableObject {
         isRinging = false
     }
 
-    /// Knoppen op het eigen wekscherm.
+    /// Knoppen op het eigen wekscherm (iOS 17–25).
     func dismiss() {
         stopRinging()
-        cancelScheduled()
-        armedFor = nil
+        fallbackTask?.cancel()
         onDismissed?()
     }
 
     func snooze() {
         stopRinging()
-        let next = Date().addingTimeInterval(Double(settings.snoozeMinutes * 60))
-        armedFor = next
-        scheduleFallback(at: next)
+        scheduleFallbackTone(at: Date().addingTimeInterval(Double(settings.snoozeMinutes * 60)))
     }
 }
 
@@ -211,19 +309,34 @@ enum AlarmKitBackend {
         }
     }
 
-    static func schedule(at date: Date, title: LocalizedStringResource) async throws -> UUID {
-        let id = UUID()
+    private static func attributes(_ title: String) -> AlarmAttributes<SnoredleAlarmMetadata> {
         let stop = AlarmButton(text: "Stop", textColor: .black, systemImageName: "sun.max.fill")
-        let alert = AlarmPresentation.Alert(title: title, stopButton: stop)
-        let attributes = AlarmAttributes<SnoredleAlarmMetadata>(
-            presentation: AlarmPresentation(alert: alert),
-            tintColor: Theme.accent)
+        let alert = AlarmPresentation.Alert(title: LocalizedStringResource(stringLiteral: title.isEmpty ? "Goedemorgen" : title),
+                                            stopButton: stop)
+        return AlarmAttributes(presentation: AlarmPresentation(alert: alert), tintColor: Theme.accent)
+    }
+
+    static func scheduleRepeating(_ a: AlarmItem) async throws {
+        let map: [Int: Locale.Weekday] = [1: .sunday, 2: .monday, 3: .tuesday, 4: .wednesday,
+                                          5: .thursday, 6: .friday, 7: .saturday]
+        let days = (a.days.isEmpty ? Array(1...7) : Array(a.days)).compactMap { map[$0] }
+        let rel = Alarm.Schedule.Relative(time: .init(hour: a.hour, minute: a.minute), repeats: .weekly(days))
         let config = AlarmManager.AlarmConfiguration<SnoredleAlarmMetadata>.alarm(
-            schedule: .fixed(date), attributes: attributes, stopIntent: nil, secondaryIntent: nil, sound: .default)
+            schedule: .relative(rel), attributes: attributes(a.label), stopIntent: nil, secondaryIntent: nil, sound: .default)
+        _ = try await AlarmManager.shared.schedule(id: a.id, configuration: config)
+    }
+
+    static func scheduleOnce(at date: Date, title: String, id: UUID) async throws -> UUID {
+        let config = AlarmManager.AlarmConfiguration<SnoredleAlarmMetadata>.alarm(
+            schedule: .fixed(date), attributes: attributes(title), stopIntent: nil, secondaryIntent: nil, sound: .default)
         _ = try await AlarmManager.shared.schedule(id: id, configuration: config)
         return id
     }
 
     static func cancel(_ id: UUID) { try? AlarmManager.shared.cancel(id: id) }
+
+    static func cancelAll() {
+        for a in (try? AlarmManager.shared.alarms) ?? [] { try? AlarmManager.shared.cancel(id: a.id) }
+    }
 }
 #endif

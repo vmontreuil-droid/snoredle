@@ -16,7 +16,7 @@ final class LiveActivityService {
     func start(session: SleepSession, alarm: Date?) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         state = .init(snoreEvents: 0, isSnoring: false, position: "—", nightSounds: 0,
-                      alarm: AlarmService.shared.armedFor ?? (AppSettings.shared.alarmEnabled ? AlarmService.shared.nextAlarmDate() : nil),
+                      alarm: AlarmService.shared.armedFor ?? AlarmService.shared.nextAlarmDate(),
                       finishedScore: nil)
         activity = try? Activity.request(attributes: SnoreActivityAttributes(start: session.start),
                                          content: .init(state: state, staleDate: nil))
@@ -67,7 +67,7 @@ enum WidgetBridge {
             snoreMinutes: Int(last.snoreMinutes), hours: last.duration / 3600,
             weekScores: done.suffix(7).map(\.snoreScore),
             streak: Achievements.streak(done),
-            alarm: AppSettings.shared.alarmEnabled ? AlarmService.shared.nextAlarmDate() : nil,
+            alarm: AlarmService.shared.nextAlarmDate(),
             goalHours: AppSettings.shared.sleepGoalHours,
             snorePercent: last.snorePercentage,
             heartRate: {

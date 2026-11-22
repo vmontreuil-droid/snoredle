@@ -51,23 +51,25 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Toggle("Wekker", isOn: $s.alarmEnabled)
-                    if s.alarmEnabled {
-                        Picker("Slim venster", selection: $s.smartWindowMinutes) {
-                            Text("Exact op tijd").tag(0); Text("10 min").tag(10); Text("20 min").tag(20)
-                            Text("30 min").tag(30); Text("45 min").tag(45)
-                        }
-                        Stepper("Sluimeren \(s.snoozeMinutes) min", value: $s.snoozeMinutes, in: 3...30)
-                        Toggle("Ook trillen op watch", isOn: $s.alarmVibrateWatch)
-                        VStack(alignment: .leading) {
-                            Text("Gevoeligheid slimme wekker")
-                            Slider(value: $s.smartWakeMovementThreshold, in: 0.5...4) {
-                                Text("Gevoeligheid")
-                            } minimumValueLabel: { Text("hoog").font(.caption2) } maximumValueLabel: { Text("laag").font(.caption2) }
+                    NavigationLink {
+                        AlarmsView()
+                    } label: {
+                        HStack {
+                            Label("Wekkers", systemImage: "alarm.fill")
+                            Spacer()
+                            Text("\(AlarmService.shared.alarms.filter(\.enabled).count) actief").foregroundStyle(.secondary)
                         }
                     }
+                    Stepper("Sluimeren \(s.snoozeMinutes) min", value: $s.snoozeMinutes, in: 3...30)
+                    Toggle("Ook trillen op watch", isOn: $s.alarmVibrateWatch)
+                    VStack(alignment: .leading) {
+                        Text("Gevoeligheid slimme wekker")
+                        Slider(value: $s.smartWakeMovementThreshold, in: 0.5...4) {
+                            Text("Gevoeligheid")
+                        } minimumValueLabel: { Text("hoog").font(.caption2) } maximumValueLabel: { Text("laag").font(.caption2) }
+                    }
                 } header: { Text("Wekker") } footer: {
-                    Text("Op iOS 26 gaat de wekker af zoals de Klok-app: ook in stille modus, met Focus aan en op je Apple Watch. De meting stopt vanzelf als je hem uitzet.")
+                    Text("Op iOS 26 gaan je wekkers af zoals de Klok-app: ook in stille modus, met Focus aan, op je Apple Watch en ook als je die nacht niet meet. De meting stopt vanzelf als je een wekker uitzet.")
                 }
 
                 Section("Slaapdoel en meldingen") {
