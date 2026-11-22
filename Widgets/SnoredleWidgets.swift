@@ -42,7 +42,7 @@ struct ScoreWidget: Widget {
         }
         .configurationDisplayName("Snurkscore")
         .description("Je score van vorige nacht en je week.")
-        .supportedFamilies([.systemSmall, .systemMedium, .accessoryCircular, .accessoryRectangular, .accessoryInline])
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .accessoryCircular, .accessoryRectangular, .accessoryInline])
     }
 }
 
@@ -66,7 +66,29 @@ struct ScoreWidgetView: View {
                 }
             case .accessoryInline:
                 Label("Snurkscore \(s.score) · \(s.label)", systemImage: "moon.zzz.fill")
+            case .systemLarge:
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack {
+                        Label("Snoredle", systemImage: "moon.zzz.fill").font(.subheadline.weight(.semibold)).foregroundStyle(amber)
+                        Spacer()
+                        Text(s.date, format: .dateTime.weekday(.wide).day().month()).font(.caption).foregroundStyle(.secondary)
+                    }
+                    rings(s, size: 62)
+                    Divider().overlay(.white.opacity(0.1))
+                    Text("Afgelopen nachten").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    weekBars(s).frame(height: 60)
+                    if let a = s.alarm {
+                        Label("Wekker \(a.formatted(date: .omitted, time: .shortened))", systemImage: "alarm.fill")
+                            .font(.caption).foregroundStyle(amber)
+                    }
+                }
+                .foregroundStyle(.white)
             case .systemMedium:
+                VStack(spacing: 10) {
+                    rings(s, size: 58)
+                }
+                .foregroundStyle(.white)
+            case .systemExtraLarge:
                 HStack(spacing: 16) {
                     scoreRing(s).frame(width: 88, height: 88)
                     VStack(alignment: .leading, spacing: 6) {
@@ -100,6 +122,52 @@ struct ScoreWidgetView: View {
                 Text("Start je eerste nacht").font(.caption).multilineTextAlignment(.center).foregroundStyle(.white)
             }
         }
+    }
+
+    /// Vier cirkels naast elkaar, zoals de batterij-widget.
+    private func rings(_ s: WidgetSummary, size: CGFloat) -> some View {
+        let goal = s.goalHours ?? 7.5
+        let snore = s.snorePercent ?? 0
+        return HStack(alignment: .top, spacing: 0) {
+            ring(progress: Double(min(s.score, 80)) / 80, color: scoreColor(s.score),
+                 center: { Text("\(s.score)").font(.system(size: size * 0.32, weight: .bold, design: .rounded)) },
+                 label: s.label, size: size)
+            ring(progress: s.hours / goal, color: .green,
+                 center: { Image(systemName: "bed.double.fill").font(.system(size: size * 0.28)) },
+                 label: String(format: "%.1f u", s.hours), size: size)
+            ring(progress: snore, color: .orange,
+                 center: { Image(systemName: "waveform").font(.system(size: size * 0.30)) },
+                 label: "\(Int((snore * 100).rounded()))% snurk", size: size)
+            if let hr = s.heartRate, s.streak < 2 {
+                ring(progress: Double(hr) / 100, color: .pink,
+                     center: { Image(systemName: "heart.fill").font(.system(size: size * 0.28)) },
+                     label: "\(hr) bpm", size: size)
+            } else {
+                ring(progress: Double(s.streak) / 7, color: amber,
+                     center: { Image(systemName: "flame.fill").font(.system(size: size * 0.30)) },
+                     label: "\(s.streak) op rij", size: size)
+            }
+        }
+    }
+
+    private func ring<C: View>(progress: Double, color: Color, @ViewBuilder center: () -> C, label: String, size: CGFloat) -> some View {
+        VStack(spacing: 6) {
+            ZStack {
+                Circle().stroke(.white.opacity(0.12), lineWidth: size * 0.11)
+                Circle().trim(from: 0, to: max(0.02, min(1, progress)))
+                    .stroke(color, style: StrokeStyle(lineWidth: size * 0.11, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                center().foregroundStyle(.white)
+            }
+            .frame(width: size, height: size)
+            Text(label).font(.system(size: 12, weight: .semibold, design: .rounded))
+                .lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func scoreColor(_ score: Int) -> Color {
+        switch score { case ..<10: .green; case ..<25: .yellow; case ..<50: .orange; default: .red }
     }
 
     private func scoreRing(_ s: WidgetSummary) -> some View {

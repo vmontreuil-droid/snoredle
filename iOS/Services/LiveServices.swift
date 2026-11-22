@@ -58,7 +58,13 @@ enum WidgetBridge {
             snoreMinutes: Int(last.snoreMinutes), hours: last.duration / 3600,
             weekScores: done.suffix(7).map(\.snoreScore),
             streak: Achievements.streak(done),
-            alarm: AppSettings.shared.alarmEnabled ? AlarmService.shared.nextAlarmDate() : nil)
+            alarm: AppSettings.shared.alarmEnabled ? AlarmService.shared.nextAlarmDate() : nil,
+            goalHours: AppSettings.shared.sleepGoalHours,
+            snorePercent: last.snorePercentage,
+            heartRate: {
+                let hr = last.vitals.filter { $0.kind == .heartRate }.map(\.value)
+                return hr.isEmpty ? nil : Int(hr.reduce(0, +) / Double(hr.count))
+            }())
         summary.save()
         WidgetCenter.shared.reloadAllTimelines()
     }

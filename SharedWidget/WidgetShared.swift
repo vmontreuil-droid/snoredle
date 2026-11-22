@@ -19,9 +19,13 @@ struct WidgetSummary: Codable {
     var weekScores: [Int]          // oudste → nieuwste, max 7
     var streak: Int
     var alarm: Date?
+    var goalHours: Double? = 7.5
+    var snorePercent: Double? = 0       // 0…1 van de nacht
+    var heartRate: Int? = nil
 
     static let placeholder = WidgetSummary(date: .now, score: 12, label: "Matig", snoreMinutes: 34,
-                                           hours: 7.4, weekScores: [22, 18, 30, 15, 12, 9, 12], streak: 5, alarm: nil)
+                                           hours: 7.4, weekScores: [22, 18, 30, 15, 12, 9, 12], streak: 5, alarm: nil,
+                                           goalHours: 7.5, snorePercent: 0.08, heartRate: 56)
 
     static func load() -> WidgetSummary? {
         guard let d = AppGroup.defaults.data(forKey: "summary") else { return nil }
