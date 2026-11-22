@@ -34,7 +34,13 @@ final class StoreManager: ObservableObject {
         products = (try? await Product.products(for: Self.productIDs))?.sorted { $0.price < $1.price } ?? []
     }
 
+    /// TestFlight-versies krijgen alles gratis, zodat testers alles kunnen proberen.
+    static var isTestFlight: Bool {
+        Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt"
+    }
+
     func refresh() async {
+        if Self.isTestFlight { isPlus = true; return }
         var plus = false
         for await result in Transaction.currentEntitlements {
             if case .verified(let t) = result, Self.productIDs.contains(t.productID), t.revocationDate == nil { plus = true }

@@ -7,6 +7,7 @@ struct SessionDetailView: View {
     @EnvironmentObject var store: StoreManager
     @StateObject private var player = ClipPlayer()
     @State private var showOnlyFavorites = false
+    @FocusState private var noteFocused: Bool
 
     var body: some View {
         ScrollView {
@@ -40,6 +41,13 @@ struct SessionDetailView: View {
         .background(NightBackground())
         .navigationTitle(session.start.formatted(.dateTime.weekday(.wide).day().month()))
         .navigationBarTitleDisplayMode(.inline)
+        .scrollDismissesKeyboard(.interactively)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Klaar") { noteFocused = false }.fontWeight(.semibold)
+            }
+        }
     }
 
     private var header: some View {
@@ -282,7 +290,15 @@ struct SessionDetailView: View {
                 }
             }
             TextField("Notitie (bv. partner sliep in andere kamer)", text: $session.note, axis: .vertical)
-                .textFieldStyle(.roundedBorder)
+                .lineLimit(2...6)
+                .padding(12)
+                .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .focused($noteFocused)
+                .submitLabel(.done)
+                .onChange(of: session.note) { _, new in
+                    // Enter = klaar (geen nieuwe regel).
+                    if new.hasSuffix("\n") { session.note = String(new.dropLast()); noteFocused = false }
+                }
         }
     }
 
