@@ -135,7 +135,7 @@ final class NightTracker: NSObject, ObservableObject {
             try? await Task.sleep(for: .seconds(5))
             if let g = averageGravity(last: 5) {
                 profile.vectors[p] = g.normalized
-                send(.calibrationCaptured(position: p, gravity: g.normalized))
+                sendReliable(.calibrationCaptured(position: p, gravity: g.normalized))
                 WKInterfaceDevice.current().play(.success)
             }
             calibrating = nil
@@ -158,6 +158,36 @@ final class NightTracker: NSObject, ObservableObject {
     }
 
     // MARK: Communicatie
+
+    /// Komt altijd aan, ook als de iPhone-app even niet open is.
+    func sendReliable(_ msg: WatchMessage) {
+        guard let data = try? msg.encoded(), WCSession.default.activationState == .activated else { return }
+        if WCSession.default.isReachable { WCSession.default.sendMessageData(data, replyHandler: nil) { _ in
+            WCSession.default.transferUserInfo(["msg": data]) } }
+        else { WCSession.default.transferUserInfo(["msg": data]) }
+    }
+
+    /// Kalibratie volledig op de watch: 4 houdingen, telkens 10 s met trillingen als signaal.
+    @Published private(set) var guidedStep: SleepPosition?
+    @Published private(set) var guidedCountdown = 0
+
+    func runGuidedCalibration() {
+        Task {
+            for p in SleepPosition.calibratable {
+                guidedStep = p
+                WKInterfaceDevice.current().play(.start)
+                for i in stride(from: 10, to: 0, by: -1) {
+                    guidedCountdown = i
+                    if i == 5 { calibrate(p) }
+                    try? await Task.sleep(for: .seconds(1))
+                }
+                try? await Task.sleep(for: .seconds(1))
+            }
+            guidedStep = nil
+            guidedCountdown = 0
+            WKInterfaceDevice.current().play(.success)
+        }
+    }
 
     func send(_ msg: WatchMessage) {
         guard let data = try? msg.encoded() else { return }

@@ -63,7 +63,12 @@ struct WatchHomeView: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            if let c = t.calibrating {
+            if let g = t.guidedStep {
+                Text("Lig op je \(g.label.lowercased())").font(.headline).multilineTextAlignment(.center)
+                Image(systemName: g.symbol).font(.largeTitle).foregroundStyle(.orange)
+                Text("\(t.guidedCountdown)").font(.title.bold()).monospacedDigit()
+                Text(t.guidedCountdown > 5 ? "Stil gaan liggen…" : "Meten…").font(.footnote).foregroundStyle(.secondary)
+            } else if let c = t.calibrating {
                 Text("Stil blijven liggen…").font(.headline)
                 Image(systemName: c.symbol).font(.largeTitle)
                 Text(c.label)
@@ -79,6 +84,7 @@ struct WatchHomeView: View {
                 Text(t.profile.isComplete ? "Klaar voor de nacht" : "Kalibreer via je iPhone")
                     .font(.footnote).multilineTextAlignment(.center).foregroundStyle(.secondary)
                 Text("Start de nacht op je iPhone.").font(.caption2).foregroundStyle(.secondary)
+                Button("Kalibreer houdingen") { t.runGuidedCalibration() }
                 Button("Test tikje") { t.nudge(.medium) }
             }
         }

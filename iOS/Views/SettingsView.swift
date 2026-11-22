@@ -142,43 +142,61 @@ struct CalibrationView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var step = 0
     @State private var countdown = 0
+    @State private var failed = false
 
     var position: SleepPosition? { step < SleepPosition.calibratable.count ? SleepPosition.calibratable[step] : nil }
 
     var body: some View {
-        VStack(spacing: 24) {
-            Text("Kalibratie").font(.largeTitle.bold())
+        VStack(spacing: 20) {
+            Text("Kalibratie").font(.system(.largeTitle, design: .rounded).bold())
             if let p = position {
-                Image(systemName: p.symbol).font(.system(size: 64)).foregroundStyle(Theme.accent)
-                Text("Ga op je \(p.label.lowercased()) liggen, zoals je slaapt, met je watch om.")
+                Text("Houding \(step + 1) van \(SleepPosition.calibratable.count)").font(.footnote).foregroundStyle(.secondary)
+                Image(systemName: p.symbol).font(.system(size: 56)).foregroundStyle(Theme.accent)
+                Text("Ga op je \(p.label.lowercased()) liggen zoals je slaapt, met je watch om.")
                     .multilineTextAlignment(.center)
-                if countdown > 0 {
-                    Text("\(countdown)").font(.system(size: 60, weight: .bold)).monospacedDigit()
-                } else {
-                    Button("Ik lig klaar") { run(p) }.buttonStyle(.borderedProminent)
+                if !hub.watchReachable {
+                    Label("Doe je watch om en open Snoredle erop. Dan kan je beginnen.", systemImage: "applewatch.slash")
+                        .font(.footnote).foregroundStyle(.orange).multilineTextAlignment(.center)
                 }
-                if hub.profile.vectors[p] != nil { Text("✓ gemeten").foregroundStyle(.green) }
+                if countdown > 0 {
+                    Text("\(countdown)").font(.system(size: 56, weight: .bold, design: .rounded)).monospacedDigit()
+                    Text(countdown > 5 ? "Stil gaan liggen…" : "Meten…").font(.footnote).foregroundStyle(.secondary)
+                } else {
+                    Button(failed ? "Opnieuw proberen" : "Ik lig klaar") { run(p) }
+                        .buttonStyle(.borderedProminent).disabled(!hub.watchReachable)
+                }
+                if failed {
+                    Text("De meting kwam niet aan. Zit je watch om, ontgrendeld, en staat Snoredle erop open?")
+                        .font(.footnote).foregroundStyle(.orange).multilineTextAlignment(.center)
+                }
+                Text("Tip: je kan ook op de watch zelf kalibreren: open Snoredle op je watch › Kalibreer.")
+                    .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
             } else {
-                Image(systemName: "checkmark.circle.fill").font(.system(size: 64)).foregroundStyle(.green)
+                Image(systemName: "checkmark.circle.fill").font(.system(size: 56)).foregroundStyle(.green)
                 Text("Klaar! Je watch herkent nu je slaaphoudingen.")
                 Button("Sluiten") { dismiss() }.buttonStyle(.borderedProminent)
             }
         }
-        .padding(32)
-        .presentationDetents([.medium])
+        .padding(28)
+        .presentationDetents([.medium, .large])
     }
 
     private func run(_ p: SleepPosition) {
+        failed = false
+        let before = hub.profile.vectors[p]
         countdown = 10
-        // De watch meet de laatste 5 s van de 10 s; zo kan je eerst stil gaan liggen.
         Task {
             while countdown > 0 {
                 try? await Task.sleep(for: .seconds(1))
                 countdown -= 1
                 if countdown == 5 { hub.calibrate(p) }
             }
-            try? await Task.sleep(for: .seconds(1))
-            step += 1
+            // Wacht tot de watch de meting terugstuurt (max. 8 s).
+            for _ in 0..<16 {
+                if let v = hub.profile.vectors[p], v != before { step += 1; return }
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+            failed = true
         }
     }
 }

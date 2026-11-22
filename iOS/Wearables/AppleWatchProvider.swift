@@ -101,6 +101,8 @@ final class AppleWatchProvider: NSObject, WearableProvider, WCSessionDelegate {
     func sessionWatchStateDidChange(_ session: WCSession) { subject.send(.availabilityChanged) }
     func sessionReachabilityDidChange(_ session: WCSession) { subject.send(.availabilityChanged) }
 
+    var isReachable: Bool { session?.isReachable ?? false }
+
     /// Korte uitleg voor op het startscherm.
     var statusHint: String? {
         guard let s = session else { return "Deze iPhone ondersteunt geen Apple Watch" }
