@@ -20,6 +20,8 @@ final class HealthKitService {
         guard isAvailable else { return }
         var read = Set<HKObjectType>(types.values.compactMap { HKQuantityType.quantityType(forIdentifier: $0) })
         read.insert(HKCategoryType(.sleepAnalysis))
+        read.insert(HKQuantityType(.dietaryCaffeine))
+        read.insert(HKQuantityType(.numberOfAlcoholicBeverages))
         let share: Set<HKSampleType> = [HKCategoryType(.sleepAnalysis)]
         try await store.requestAuthorization(toShare: share, read: read)
     }
@@ -62,6 +64,35 @@ final class HealthKitService {
             }
             return (st, iv.start, iv.end)
         }
+    }
+
+    /// Factoren die je vandaag in Gezondheid registreerde (cafeïne na 14 u, alcohol).
+    func factorsToday() async -> [SleepFactor] {
+        guard isAvailable else { return [] }
+        let cal = Calendar.current
+        let dayStart = cal.startOfDay(for: .now)
+        let afternoon = cal.date(bySettingHour: 14, minute: 0, second: 0, of: .now) ?? dayStart
+        var out: [SleepFactor] = []
+        if await sum(.dietaryCaffeine, unit: .gramUnit(with: .milli), from: afternoon) > 40 { out.append(.caffeine) }
+        if await sum(.numberOfAlcoholicBeverages, unit: .count(), from: dayStart) >= 1 { out.append(.alcohol) }
+        return out
+    }
+
+    private func sum(_ id: HKQuantityTypeIdentifier, unit: HKUnit, from: Date) async -> Double {
+        let type = HKQuantityType(id)
+        let pred = HKQuery.predicateForSamples(withStart: from, end: .now)
+        let d = HKStatisticsQueryDescriptor(predicate: .quantitySample(type: type, predicate: pred), options: .cumulativeSum)
+        return (try? await d.result(for: store))?.sumQuantity()?.doubleValue(for: unit) ?? 0
+    }
+
+    /// Schrijft de nacht als "in bed" naar Gezondheid.
+    func saveSleep(start: Date, end: Date) async {
+        guard isAvailable, end.timeIntervalSince(start) > 1800 else { return }
+        let sample = HKCategorySample(type: HKCategoryType(.sleepAnalysis),
+                                      value: HKCategoryValueSleepAnalysis.inBed.rawValue,
+                                      start: start, end: end,
+                                      metadata: [HKMetadataKeyWasUserEntered: false])
+        try? await store.save(sample)
     }
 
     /// Slaapfasen van andere apps/watches (in bed, kern, diep, REM, wakker).

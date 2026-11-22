@@ -66,6 +66,7 @@ targets:
         BGTaskSchedulerPermittedIdentifiers: [be.snoredle.analysis]
         NSAlarmKitUsageDescription: "$(APP_NAME) gebruikt de wekker om je 's ochtends te wekken, ook in stille modus."
         NSSupportsLiveActivities: true
+        NSSpeechRecognitionUsageDescription: "Snoredle zet praten in je slaap om naar tekst, op je toestel."
         NSFaceIDUsageDescription: "Met Face ID vergrendel je Snoredle, zodat anderen je nachten en opnames niet zien."
     settings:
       base:

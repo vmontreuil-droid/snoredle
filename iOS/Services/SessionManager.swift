@@ -197,6 +197,7 @@ final class SessionManager: ObservableObject {
             }
         }
         session.alarmNote = AlarmService.shared.lastWakeReason
+        if settings.useHealthKit { await HealthKitService.shared.saveSleep(start: session.start, end: session.end ?? .now) }
         SnoreAnalysis.summarize(session)
         try? context?.save()
         LiveActivityService.shared.end(score: session.snoreScore)

@@ -14,6 +14,7 @@ struct SessionDetailView: View {
     @State private var picked: Date?
     @State private var editFactors = false
     @State private var soundFilter: NightSoundKind?
+    @ObservedObject private var transcriber = TranscriptionService.shared
     @Query(sort: \SleepSession.start) private var allSessions: [SleepSession]
 
     var body: some View {
@@ -310,13 +311,32 @@ struct SessionDetailView: View {
                     .buttonStyle(.plain)
                 }
             }
+            if session.nightSounds.contains(where: { $0.kind == .talking && $0.clipFileName != nil && $0.transcript == nil }) {
+                Button {
+                    Task { await TranscriptionService.shared.transcribeAll(session.nightSounds) }
+                } label: {
+                    Label(transcriber.busy.isEmpty ? "Alle slaappraat uitschrijven" : "Bezig met uitschrijven…",
+                          systemImage: "text.quote")
+                        .font(.footnote.weight(.semibold))
+                }
+                .disabled(!transcriber.busy.isEmpty)
+            }
             ForEach(session.nightSounds.filter { soundFilter == nil || $0.kind == soundFilter }
                         .sorted { $0.start < $1.start }.prefix(store.isPlus ? 500 : 5)) { n in
+              VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Image(systemName: n.kind.symbol).frame(width: 22).foregroundStyle(.secondary)
                     Text(n.start.formatted(date: .omitted, time: .shortened)).font(.subheadline.monospacedDigit())
                     Text("\(n.kind.label) · \(max(1, Int(n.duration))) s").font(.caption).foregroundStyle(.secondary)
                     Spacer()
+                    if n.kind == .talking, n.clipFileName != nil, n.transcript == nil {
+                        if transcriber.busy.contains(n.clipFileName ?? "") { ProgressView().controlSize(.small) }
+                        else {
+                            Button { Task { await TranscriptionService.shared.transcribe(n) } } label: {
+                                Image(systemName: "text.quote").font(.title3)
+                            }
+                        }
+                    }
                     if let c = n.clipFileName {
                         Button { player.toggle(ClipRecorder.url(for: c)) } label: {
                             Image(systemName: player.playingURL?.lastPathComponent == c ? "stop.circle.fill" : "play.circle.fill")
@@ -324,6 +344,12 @@ struct SessionDetailView: View {
                         }
                     }
                 }
+                if let t = n.transcript {
+                    Text("“\(t)”").font(.callout.italic()).foregroundStyle(Theme.accent)
+                        .padding(.leading, 30)
+                        .textSelection(.enabled)
+                }
+              }
             }
             if session.nightSounds.contains(where: { $0.kind == .gasp }) {
                 Text("Naar adem happen na snurken kan op ademstops wijzen. Bespreek het met je arts als het vaak voorkomt.")
@@ -371,6 +397,8 @@ struct SessionDetailView: View {
         let events = session.events.sorted { $0.start < $1.start }.filter { !showOnlyFavorites || $0.isFavorite }
         return VStack(spacing: 8) {
             Toggle("Alleen favorieten", isOn: $showOnlyFavorites).font(.subheadline)
+            Text("Tik op 👥 als een fragment van je partner is: dan telt het niet mee in je score.")
+                .font(.caption).foregroundStyle(.secondary)
             ForEach(events.prefix(store.isPlus ? 500 : 5)) { e in
                 HStack {
                     Button {
@@ -382,11 +410,19 @@ struct SessionDetailView: View {
                     }.disabled(e.clipFileName == nil)
                     VStack(alignment: .leading) {
                         Text(e.start.formatted(date: .omitted, time: .shortened)).font(.subheadline.bold())
-                        Text("\(Int(e.duration)) s · \(e.intensity.label) · \(Int(e.peakDecibel)) dB · \(e.position.label)\(e.wasNudged ? " · tikje" : "")")
+                        Text("\(Int(e.duration)) s · \(e.intensity.label) · \(Int(e.peakDecibel)) dB · \(e.position.label)\(e.wasNudged ? " · tikje" : "")\(e.isPartner ? " · partner" : "")")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
                     Circle().fill(Theme.color(e.intensity)).frame(width: 10)
+                    Button {
+                        e.isPartner.toggle()
+                        SnoreAnalysis.summarize(session)
+                    } label: {
+                        Image(systemName: e.isPartner ? "person.2.fill" : "person.2")
+                            .foregroundStyle(e.isPartner ? .cyan : .secondary)
+                    }
+                    .accessibilityLabel(e.isPartner ? "Partner — telt niet mee" : "Markeer als partner")
                     Button { e.isFavorite.toggle() } label: {
                         Image(systemName: e.isFavorite ? "star.fill" : "star")
                     }

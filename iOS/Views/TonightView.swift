@@ -14,6 +14,7 @@ struct TonightView: View {
     @State private var showCalibration = false
     @State private var showAllFactors = false
     @State private var showSounds = false
+    @State private var healthNote: String?
     @ObservedObject private var sounds = SleepSoundController.shared
 
     var body: some View {
@@ -54,7 +55,7 @@ struct TonightView: View {
                     .buttonStyle(.plain)
 
                     section(title: "Wat speelde er vandaag?",
-                            subtitle: factors.isEmpty ? "Optioneel — zo leer je wat je snurken beïnvloedt" : "\(factors.count) geselecteerd") {
+                            subtitle: healthNote ?? (factors.isEmpty ? "Optioneel — zo leer je wat je snurken beïnvloedt" : "\(factors.count) geselecteerd")) {
                         let shown = showAllFactors ? SleepFactor.allCases : Array(SleepFactor.allCases.prefix(8))
                         FlowLayout(spacing: 8) {
                             ForEach(shown) { f in
@@ -96,6 +97,16 @@ struct TonightView: View {
             .sheet(isPresented: $showSounds) { SleepSoundsSheet() }
             .onAppear {
                 remedies = Set(lastRemediesRaw.split(separator: ",").compactMap { Remedy(rawValue: String($0)) })
+            }
+            .task {
+                guard settings.useHealthKit else { return }
+                try? await HealthKitService.shared.requestAuthorization()
+                let fromHealth = await HealthKitService.shared.factorsToday()
+                let new = fromHealth.filter { !factors.contains($0) }
+                if !new.isEmpty {
+                    factors.formUnion(new)
+                    healthNote = "Uit Gezondheid: " + new.map(\.label).joined(separator: ", ")
+                }
             }
             .sensoryFeedback(.selection, trigger: factors.count + remedies.count)
         }
