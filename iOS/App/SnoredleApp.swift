@@ -63,8 +63,12 @@ enum Theme {
     }
     static func color(_ p: SleepPosition) -> Color {
         switch p {
-        case .back: .pink; case .left: .teal; case .right: .cyan
-        case .stomach: .purple; case .upright: .gray; case .unknown: .secondary
+        case .back: Color(red: 1.00, green: 0.38, blue: 0.42)     // rood
+        case .left: Color(red: 0.30, green: 0.85, blue: 0.45)     // groen
+        case .right: Color(red: 0.32, green: 0.55, blue: 1.00)    // blauw
+        case .stomach: Color(red: 0.75, green: 0.40, blue: 0.95)  // paars
+        case .upright: .gray
+        case .unknown: .secondary
         }
     }
 }
