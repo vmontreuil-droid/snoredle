@@ -19,6 +19,8 @@ final class NightTracker: NSObject, ObservableObject {
     @Published private(set) var heartRate: Double?
     @Published private(set) var calibrating: SleepPosition?
     @Published var profile = CalibrationProfile()
+    @Published private(set) var phoneRecording = false
+    @Published private(set) var pausedUntil: Date?
 
     private let motion = CMMotionManager()
     private let health = HKHealthStore()
@@ -237,6 +239,18 @@ final class NightTracker: NSObject, ObservableObject {
         }
     }
 
+    /// Vraag de iPhone iets te doen (start/stop/pauze).
+    func request(_ c: WatchCommand) {
+        sendReliable(.request(c))
+        WKInterfaceDevice.current().play(.click)
+        // Meteen tonen; de iPhone bevestigt via sessionState.
+        switch c {
+        case .pause(let m): pausedUntil = Date().addingTimeInterval(Double(m * 60))
+        case .resume: pausedUntil = nil
+        default: break
+        }
+    }
+
     func sendStatus() {
         WKInterfaceDevice.current().isBatteryMonitoringEnabled = true
         send(.watchStatus(WatchStatus(isTracking: isTracking,
@@ -253,6 +267,10 @@ final class NightTracker: NSObject, ObservableObject {
             if !settings.nudgeOnlyOnBack || position == .back || position == .unknown { nudge(i) }
         case .startCalibration(let p): calibrate(p)
         case .calibrationProfile(let p): profile = p
+        case .sessionState(let rec, let until):
+            phoneRecording = rec
+            pausedUntil = until
+            if !rec && isTracking { stop() }
         default: break
         }
     }

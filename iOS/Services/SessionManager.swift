@@ -6,6 +6,7 @@ import UIKit
 /// Stuurt één nacht aan: microfoon, snurkepisodes, clips, watch, tikjes, opslag.
 @MainActor
 final class SessionManager: ObservableObject {
+    static let shared = SessionManager()
     enum State: Equatable { case idle, waiting(until: Date), recording, finishing }
 
     @Published private(set) var state: State = .idle
@@ -15,6 +16,9 @@ final class SessionManager: ObservableObject {
     @Published private(set) var isSnoring = false
     @Published private(set) var eventCount = 0
     @Published var lastError: String?
+    @Published private(set) var pausedUntil: Date?
+    private var pauseStart: Date?
+    private var resumeTask: Task<Void, Never>?
 
     private let settings = AppSettings.shared
     private let hub = WearableHub.shared
@@ -64,6 +68,66 @@ final class SessionManager: ObservableObject {
         AlarmService.shared.onDismissed = { [weak self] in
             Task { @MainActor in await self?.stop() }
         }
+        context = AppData.container.mainContext
+    }
+
+    // MARK: Bediening van buitenaf (watch, Siri, Opdrachten)
+
+    func handle(_ command: WatchCommand) {
+        switch command {
+        case .start: startFromShortcut()
+        case .stop: Task { await stop() }
+        case .pause(let m): pause(minutes: m)
+        case .resume: resume()
+        }
+    }
+
+    /// Start met de middelen van de vorige keer (die gebruik je meestal meerdere nachten).
+    func startFromShortcut() {
+        guard state == .idle else { return }
+        let raw = UserDefaults.standard.string(forKey: "lastRemedies") ?? ""
+        let remedies = raw.split(separator: ",").compactMap { Remedy(rawValue: String($0)) }
+        start(factors: [], remedies: remedies)
+        if state == .idle {
+            NotificationService.shared.notify(title: "Snoredle kon niet starten",
+                                              body: "Open Snoredle op je iPhone om de nacht te starten.")
+        }
+    }
+
+    // MARK: Pauze
+
+    var isPaused: Bool { pausedUntil != nil }
+
+    /// Privémoment: even niets opnemen of meten.
+    func pause(minutes: Int) {
+        guard current != nil, state != .idle else { return }
+        closeEpisode(at: .now)
+        for kind in Array(soundTracks.keys) { closeSound(kind) }
+        clips.endClip()
+        if pauseStart == nil { pauseStart = .now }
+        let until = Date().addingTimeInterval(Double(minutes * 60))
+        pausedUntil = until
+        resumeTask?.cancel()
+        resumeTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Double(minutes * 60)))
+            guard !Task.isCancelled else { return }
+            await MainActor.run { self?.resume() }
+        }
+        broadcastState()
+    }
+
+    func resume() {
+        resumeTask?.cancel()
+        if let ps = pauseStart, let s = current {
+            s.pausesRaw += [ps.timeIntervalSince1970, Date().timeIntervalSince1970]
+        }
+        pauseStart = nil
+        pausedUntil = nil
+        broadcastState()
+    }
+
+    func broadcastState() {
+        hub.sendState(recording: state != .idle, pausedUntil: pausedUntil)
     }
 
     func attach(_ context: ModelContext) { self.context = context }
@@ -91,6 +155,8 @@ final class SessionManager: ObservableObject {
         }
 
         Task { await AlarmService.shared.arm() }
+        pausedUntil = nil; pauseStart = nil
+        defer { broadcastState() }
         LiveActivityService.shared.start(session: session, alarm: nil)
 
         let delay = TimeInterval(settings.startDelayMinutes * 60)
@@ -108,6 +174,7 @@ final class SessionManager: ObservableObject {
 
     func stop() async {
         guard let session = current else { return }
+        if isPaused { resume() }
         state = .finishing
         delayTask?.cancel()
         closeEpisode(at: .now)
@@ -141,6 +208,7 @@ final class SessionManager: ObservableObject {
 
         current = nil
         state = .idle
+        broadcastState()
     }
 
     /// Automatisch stoppen op het ingestelde uur.
@@ -155,6 +223,9 @@ final class SessionManager: ObservableObject {
     // MARK: Frames verwerken
 
     fileprivate func process(_ f: AudioFrame) {
+        if let until = pausedUntil {
+            if f.at >= until { resume() } else { liveDecibel = 0; liveSnoreProbability = 0; return }
+        }
         liveDecibel = f.decibel
         liveSnoreProbability = f.snoreConfidence
         updateNoiseFloor(f.decibel)

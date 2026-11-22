@@ -34,7 +34,29 @@ struct RecordingView: View {
                     Label(alarmText(a), systemImage: "alarm.fill")
                         .font(.subheadline).foregroundStyle(dimmed ? Color(white: 0.35) : Theme.accent)
                 }
-                if !dimmed { liveMeters }
+                if let until = manager.pausedUntil {
+                    VStack(spacing: 10) {
+                        Label("Gepauzeerd tot \(until.formatted(date: .omitted, time: .shortened))", systemImage: "pause.circle.fill")
+                            .font(.headline).foregroundStyle(Theme.accent)
+                        Text("Er wordt niets opgenomen of gemeten.").font(.caption).foregroundStyle(.secondary)
+                        Button("Hervat nu") { manager.resume() }
+                            .font(.subheadline.weight(.semibold))
+                            .padding(.horizontal, 18).padding(.vertical, 8)
+                            .background(.white.opacity(0.1), in: Capsule())
+                    }
+                } else if !dimmed {
+                    Menu {
+                        ForEach([15, 30, 45, 60, 90], id: \.self) { m in
+                            Button("\(m) minuten") { manager.pause(minutes: m) }
+                        }
+                    } label: {
+                        Label("Pauze / privémoment", systemImage: "pause.fill")
+                            .font(.footnote.weight(.medium))
+                            .padding(.horizontal, 14).padding(.vertical, 8)
+                            .background(.white.opacity(0.08), in: Capsule())
+                    }
+                }
+                if !dimmed && manager.pausedUntil == nil { liveMeters }
                 if !dimmed {
                     Button { showSounds = true } label: {
                         Label(sounds.isPlaying ? "\(sounds.sound.label) speelt · meting gepauzeerd" : "Slaapgeluiden",

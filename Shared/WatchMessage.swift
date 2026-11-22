@@ -9,6 +9,7 @@ public enum WatchMessage: Codable, Sendable {
     case nudge(intensity: NudgeIntensity)            // tik bij snurken
     case startCalibration(position: SleepPosition)
     case calibrationProfile(CalibrationProfile)
+    case sessionState(recording: Bool, pausedUntil: Date?)
 
     /// watch → iPhone
     case positionSample(PositionSamplePayload)
@@ -16,11 +17,18 @@ public enum WatchMessage: Codable, Sendable {
     case movement(intensity: Double, at: Date)       // onrust / bewegen
     case calibrationCaptured(position: SleepPosition, gravity: Vector3)
     case watchStatus(WatchStatus)
+    case request(WatchCommand)                       // bediening vanaf de watch
 
     public func encoded() throws -> Data { try JSONEncoder.snoredle.encode(self) }
     public static func decode(_ data: Data) throws -> WatchMessage {
         try JSONDecoder.snoredle.decode(WatchMessage.self, from: data)
     }
+}
+
+/// Wat je vanaf de watch kan bedienen.
+public enum WatchCommand: Codable, Sendable, Hashable {
+    case start, stop, resume
+    case pause(minutes: Int)
 }
 
 public struct WatchSettings: Codable, Sendable, Hashable {

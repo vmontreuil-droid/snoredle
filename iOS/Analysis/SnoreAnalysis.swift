@@ -30,7 +30,7 @@ enum SnoreAnalysis {
     /// Vult de samenvatting van een sessie in.
     static func summarize(_ s: SleepSession) {
         var light = 0.0, loud = 0.0, epic = 0.0
-        for e in s.events {
+        for e in s.events where !e.isPartner {
             let m = e.duration / 60
             switch e.intensity {
             case .light, .quiet: light += m
@@ -41,7 +41,7 @@ enum SnoreAnalysis {
         s.snoreMinutes = light + loud + epic
         s.loudSnoreMinutes = loud
         s.epicSnoreMinutes = epic
-        s.snoreScore = score(light: light, loud: loud, epic: epic, hours: s.duration / 3600)
+        s.snoreScore = score(light: light, loud: loud, epic: epic, hours: s.sleepDuration / 3600)
         let dbs = s.loudness.map(\.decibel)
         s.averageDecibel = dbs.isEmpty ? 0 : dbs.reduce(0, +) / Double(dbs.count)
         s.peakDecibel = s.events.map(\.peakDecibel).max() ?? dbs.max() ?? 0

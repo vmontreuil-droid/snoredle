@@ -1,21 +1,27 @@
 import SwiftUI
 import SwiftData
 
-@main
-struct SnoredleApp: App {
-    @StateObject private var settings = AppSettings.shared
-    @StateObject private var hub = WearableHub.shared
-    @StateObject private var store = StoreManager.shared
-    @StateObject private var manager = SessionManager()
-    @StateObject private var lock = AppLock.shared
-    @Environment(\.scenePhase) private var scenePhase
-
-    let container: ModelContainer = {
+/// Eén gedeelde databank, ook bruikbaar als de app op de achtergrond start (watch, Siri).
+@MainActor
+enum AppData {
+    static let container: ModelContainer = {
         let schema = Schema([SleepSession.self, SnoreEvent.self, LoudnessSample.self,
                              PositionSample.self, VitalSample.self,
                              NightSoundEvent.self, SleepStageSample.self])
         return try! ModelContainer(for: schema)
     }()
+}
+
+@main
+struct SnoredleApp: App {
+    @StateObject private var settings = AppSettings.shared
+    @StateObject private var hub = WearableHub.shared
+    @StateObject private var store = StoreManager.shared
+    @StateObject private var manager = SessionManager.shared
+    @StateObject private var lock = AppLock.shared
+    @Environment(\.scenePhase) private var scenePhase
+
+    var container: ModelContainer { AppData.container }
 
     init() {
         WearableHub.shared.register(AppleWatchProvider())

@@ -86,6 +86,13 @@ final class NotificationService {
     private let center = UNUserNotificationCenter.current()
     private let settings = AppSettings.shared
 
+    /// Eenvoudige melding nu.
+    func notify(title: String, body: String) {
+        let c = UNMutableNotificationContent()
+        c.title = title; c.body = body; c.sound = .default
+        center.add(UNNotificationRequest(identifier: UUID().uuidString, content: c, trigger: nil))
+    }
+
     func requestAuthorization() async {
         _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
     }

@@ -52,9 +52,11 @@ final class WatchConnector: NSObject, WCSessionDelegate {
     }
     func session(_ s: WCSession, didReceiveApplicationContext ctx: [String: Any]) {
         if let d = ctx["profile"] as? Data { handle(d) }
+        if let d = ctx["state"] as? Data { handle(d) }
     }
     func session(_ s: WCSession, activationDidCompleteWith state: WCSessionActivationState, error: Error?) {
         if let d = s.receivedApplicationContext["profile"] as? Data { handle(d) }
+        if let d = s.receivedApplicationContext["state"] as? Data { handle(d) }
     }
 }
 
@@ -62,30 +64,39 @@ struct WatchHomeView: View {
     @EnvironmentObject var t: NightTracker
 
     var body: some View {
-        VStack(spacing: 8) {
-            if let g = t.guidedStep {
-                Text("Lig op je \(g.label.lowercased())").font(.headline).multilineTextAlignment(.center)
-                Image(systemName: g.symbol).font(.largeTitle).foregroundStyle(.orange)
-                Text("\(t.guidedCountdown)").font(.title.bold()).monospacedDigit()
-                Text(t.guidedCountdown > 5 ? "Stil gaan liggen…" : "Meten…").font(.footnote).foregroundStyle(.secondary)
-            } else if let c = t.calibrating {
-                Text("Stil blijven liggen…").font(.headline)
-                Image(systemName: c.symbol).font(.largeTitle)
-                Text(c.label)
-            } else if t.isTracking {
-                Image(systemName: t.position.symbol).font(.largeTitle).foregroundStyle(.orange)
-                Text(t.position.label).font(.headline)
-                if let hr = t.heartRate { Label("\(Int(hr))", systemImage: "heart.fill").foregroundStyle(.red) }
-                Text("Slaap lekker 🌙").font(.footnote).foregroundStyle(.secondary)
-                Button("Stop", role: .destructive) { t.stop() }.padding(.top, 4)
-            } else {
-                Image(systemName: "moon.zzz.fill").font(.largeTitle).foregroundStyle(.orange)
-                Text("Snoredle").font(.headline)
-                Text(t.profile.isComplete ? "Klaar voor de nacht" : "Kalibreer via je iPhone")
-                    .font(.footnote).multilineTextAlignment(.center).foregroundStyle(.secondary)
-                Text("Start de nacht op je iPhone.").font(.caption2).foregroundStyle(.secondary)
-                Button("Kalibreer houdingen") { t.runGuidedCalibration() }
-                Button("Test tikje") { t.nudge(.medium) }
+        ScrollView {
+            VStack(spacing: 8) {
+                if let g = t.guidedStep {
+                    Text("Lig op je \(g.label.lowercased())").font(.headline).multilineTextAlignment(.center)
+                    Image(systemName: g.symbol).font(.largeTitle).foregroundStyle(.orange)
+                    Text("\(t.guidedCountdown)").font(.title.bold()).monospacedDigit()
+                    Text(t.guidedCountdown > 5 ? "Stil gaan liggen…" : "Meten…").font(.footnote).foregroundStyle(.secondary)
+                } else if let c = t.calibrating {
+                    Text("Stil blijven liggen…").font(.headline)
+                    Image(systemName: c.symbol).font(.largeTitle)
+                    Text(c.label)
+                } else if t.phoneRecording || t.isTracking {
+                    if let until = t.pausedUntil, until > .now {
+                        Image(systemName: "pause.circle.fill").font(.largeTitle).foregroundStyle(.orange)
+                        Text("Gepauzeerd").font(.headline)
+                        Text("tot \(until.formatted(date: .omitted, time: .shortened))").font(.footnote).foregroundStyle(.secondary)
+                        Button("Hervat") { t.request(.resume) }.tint(.orange)
+                    } else {
+                        Image(systemName: t.position.symbol).font(.largeTitle).foregroundStyle(.orange)
+                        Text(t.position.label).font(.headline)
+                        if let hr = t.heartRate { Label("\(Int(hr))", systemImage: "heart.fill").foregroundStyle(.red) }
+                        Button("Pauze 30 min") { t.request(.pause(minutes: 30)) }
+                    }
+                    Button("Stop de nacht", role: .destructive) { t.request(.stop); t.stop() }
+                } else {
+                    Image(systemName: "moon.zzz.fill").font(.largeTitle).foregroundStyle(.orange)
+                    Text("Snoredle").font(.headline)
+                    Button("Start de nacht") { t.request(.start) }.tint(.orange)
+                    Text(t.profile.isComplete ? "Houdingen gekalibreerd ✓" : "Nog niet gekalibreerd")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Button("Kalibreer houdingen") { t.runGuidedCalibration() }
+                    Button("Test tikje") { t.nudge(.medium) }
+                }
             }
         }
     }

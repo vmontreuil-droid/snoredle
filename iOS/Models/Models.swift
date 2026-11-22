@@ -30,6 +30,7 @@ final class SleepSession {
     @Relationship(deleteRule: .cascade, inverse: \NightSoundEvent.session) var nightSounds: [NightSoundEvent] = []
     @Relationship(deleteRule: .cascade, inverse: \SleepStageSample.session) var stages: [SleepStageSample] = []
     var alarmNote: String?
+    var pausesRaw: [Double] = []            // paren (start, einde) als timeIntervalSince1970
 
     init(start: Date = .now) {
         self.id = UUID()
@@ -42,7 +43,16 @@ final class SleepSession {
     var duration: TimeInterval { (end ?? .now).timeIntervalSince(start) }
     var factors: [SleepFactor] { factorsRaw.compactMap(SleepFactor.init(rawValue:)) }
     var remedies: [Remedy] { remediesRaw.compactMap(Remedy.init(rawValue:)) }
-    var snorePercentage: Double { duration > 0 ? min(1, snoreMinutes * 60 / duration) : 0 }
+    var snorePercentage: Double { sleepDuration > 0 ? min(1, snoreMinutes * 60 / sleepDuration) : 0 }
+    var pauses: [DateInterval] {
+        stride(from: 0, to: pausesRaw.count - 1, by: 2).compactMap { i in
+            let a = Date(timeIntervalSince1970: pausesRaw[i]), b = Date(timeIntervalSince1970: pausesRaw[i + 1])
+            return b > a ? DateInterval(start: a, end: b) : nil
+        }
+    }
+    var pausedSeconds: TimeInterval { pauses.map(\.duration).reduce(0, +) }
+    /// Duur zonder pauzes.
+    var sleepDuration: TimeInterval { max(0, duration - pausedSeconds) }
 }
 
 enum SnoreIntensity: Int, Codable, CaseIterable {
@@ -62,6 +72,7 @@ final class SnoreEvent {
     var clipFileName: String?               // in Documents/Clips
     var isFavorite: Bool = false
     var wasNudged: Bool = false
+    var isPartner: Bool = false             // door jou aangeduid als je partner
     var session: SleepSession?
 
     init(start: Date, end: Date, intensity: SnoreIntensity, peakDecibel: Double,
@@ -266,6 +277,7 @@ final class NightSoundEvent {
     var kindRaw: String
     var confidence: Double
     var clipFileName: String?
+    var transcript: String?
     var session: SleepSession?
     init(start: Date, end: Date, kind: NightSoundKind, confidence: Double, clipFileName: String?) {
         self.start = start; self.end = end; self.kindRaw = kind.rawValue

@@ -10,6 +10,8 @@ final class AppleWatchProvider: NSObject, WearableProvider, WCSessionDelegate {
     private let subject = PassthroughSubject<WearableEvent, Never>()
     var events: AnyPublisher<WearableEvent, Never> { subject.eraseToAnyPublisher() }
 
+    private var lastProfileData: Data?
+    private var lastStateData: Data?
     private var session: WCSession? { WCSession.isSupported() ? WCSession.default : nil }
 
     var isAvailable: Bool {
@@ -39,7 +41,20 @@ final class AppleWatchProvider: NSObject, WearableProvider, WCSessionDelegate {
         // applicationContext overleeft herstarts: de watch heeft altijd het laatste profiel.
         guard let s = session, s.activationState == .activated,
               let data = try? WatchMessage.calibrationProfile(profile).encoded() else { return }
-        try? s.updateApplicationContext(["profile": data])
+        lastProfileData = data
+        var ctx: [String: Any] = ["profile": data]
+        if let st = lastStateData { ctx["state"] = st }
+        try? s.updateApplicationContext(ctx)
+    }
+
+    func sendState(recording: Bool, pausedUntil: Date?) {
+        guard let s = session, s.activationState == .activated,
+              let data = try? WatchMessage.sessionState(recording: recording, pausedUntil: pausedUntil).encoded() else { return }
+        lastStateData = data
+        var ctx: [String: Any] = ["state": data]
+        if let p = lastProfileData { ctx["profile"] = p }
+        try? s.updateApplicationContext(ctx)
+        if s.isReachable { s.sendMessageData(data, replyHandler: nil, errorHandler: nil) }
     }
 
     /// `reliable` = in de wachtrij zetten als de watch even onbereikbaar is.
@@ -85,6 +100,7 @@ final class AppleWatchProvider: NSObject, WearableProvider, WCSessionDelegate {
         case .movement(let i, let at): subject.send(.vital(.movement, i, at))
         case .calibrationCaptured(let pos, let g): subject.send(.calibrated(pos, g))
         case .watchStatus(let s): subject.send(.status(s))
+        case .request(let c): subject.send(.command(c))
         default: break
         }
     }

@@ -15,6 +15,7 @@ protocol WearableProvider: AnyObject {
     func nudge(_ intensity: NudgeIntensity)
     func calibrate(_ position: SleepPosition)
     func send(profile: CalibrationProfile)
+    func sendState(recording: Bool, pausedUntil: Date?)
 }
 
 struct WearableCapabilities: OptionSet {
@@ -33,6 +34,7 @@ enum WearableEvent {
     case calibrated(SleepPosition, Vector3)
     case status(WatchStatus)
     case availabilityChanged
+    case command(WatchCommand)
 }
 
 /// Lege standaardimplementaties voor providers die iets niet kunnen.
@@ -40,6 +42,7 @@ extension WearableProvider {
     func nudge(_ intensity: NudgeIntensity) {}
     func calibrate(_ position: SleepPosition) {}
     func send(profile: CalibrationProfile) {}
+    func sendState(recording: Bool, pausedUntil: Date?) {}
 }
 
 /// Beheert alle gekoppelde wearables tegelijk en bundelt hun data.
@@ -86,6 +89,10 @@ final class WearableHub: ObservableObject {
         return "Geen watch met trilfunctie gevonden."
     }
 
+    func sendState(recording: Bool, pausedUntil: Date?) {
+        providers.forEach { $0.sendState(recording: recording, pausedUntil: pausedUntil) }
+    }
+
     func calibrate(_ pos: SleepPosition) { active.forEach { $0.calibrate(pos) } }
 
     private func handle(_ e: WearableEvent, from source: String) {
@@ -98,6 +105,7 @@ final class WearableHub: ObservableObject {
             active.forEach { $0.send(profile: profile) }
         case .status(let s): watchStatus = s
         case .availabilityChanged: objectWillChange.send()
+        case .command(let c): SessionManager.shared.handle(c)
         default: break
         }
         events.send((source, e))
