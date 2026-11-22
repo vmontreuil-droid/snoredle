@@ -5,6 +5,7 @@ struct SettingsView: View {
     @EnvironmentObject var hub: WearableHub
     @EnvironmentObject var store: StoreManager
     @State private var showCalibration = false
+    @ObservedObject private var lock = AppLock.shared
     @State private var nudgeResult: String?
     @State private var testing = false
 
@@ -33,6 +34,20 @@ struct SettingsView: View {
                         Slider(value: $s.calibrationOffset, in: 70...120, step: 1)
                         Text("Vergelijk met een geluidsmeter en pas aan tot de waarden overeenkomen.").font(.caption).foregroundStyle(.secondary)
                     }
+                }
+
+                Section {
+                    Toggle(isOn: Binding(get: { lock.enabled }, set: { on in Task { _ = await lock.enable(on) } })) {
+                        Label("Vergrendel met \(lock.biometryName)", systemImage: lock.biometrySymbol)
+                    }
+                    if lock.enabled {
+                        Picker("Opnieuw vergrendelen", selection: $lock.graceSeconds) {
+                            Text("Meteen").tag(0); Text("Na 1 minuut").tag(60)
+                            Text("Na 5 minuten").tag(300); Text("Na 15 minuten").tag(900)
+                        }
+                    }
+                } header: { Text("Privacy") } footer: {
+                    Text("Anderen die je telefoon gebruiken, zien je nachten en opnames niet. In de app-wisselaar wordt de inhoud verborgen.")
                 }
 
                 Section {

@@ -7,6 +7,8 @@ struct SnoredleApp: App {
     @StateObject private var hub = WearableHub.shared
     @StateObject private var store = StoreManager.shared
     @StateObject private var manager = SessionManager()
+    @StateObject private var lock = AppLock.shared
+    @Environment(\.scenePhase) private var scenePhase
 
     let container: ModelContainer = {
         let schema = Schema([SleepSession.self, SnoreEvent.self, LoudnessSample.self,
@@ -24,18 +26,23 @@ struct SnoredleApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            ZStack {
+                RootView()
+                if lock.isLocked || lock.obscured { LockScreen().zIndex(10) }
+            }
                 .environmentObject(settings)
                 .environmentObject(hub)
                 .environmentObject(store)
                 .environmentObject(manager)
                 .onAppear {
                     manager.attach(container.mainContext)
+                    lock.appLaunched()
                     WidgetBridge.publish(context: container.mainContext)
                     NotificationService.shared.refreshWeekly(context: container.mainContext)
                 }
                 .tint(Theme.accent)
                 .preferredColorScheme(.dark)
+                .onChange(of: scenePhase) { _, p in lock.scenePhaseChanged(p) }
         }
         .modelContainer(container)
     }
