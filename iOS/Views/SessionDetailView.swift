@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import Charts
 import AVFoundation
 import Accelerate
@@ -11,11 +12,14 @@ struct SessionDetailView: View {
     @FocusState private var noteFocused: Bool
     @State private var showExplorer = false
     @State private var picked: Date?
+    @State private var editFactors = false
+    @Query(sort: \SleepSession.start) private var allSessions: [SleepSession]
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header
+                card("Wat speelde er") { factorsSection }
                 if let note = session.alarmNote {
                     Label(note, systemImage: "alarm.fill").font(.footnote).foregroundStyle(Theme.accent)
                 }
@@ -35,12 +39,6 @@ struct SessionDetailView: View {
                 if !session.vitals.isEmpty { card("Lichaam") { vitalsSection } }
                 card("Snurkfragmenten (\(session.events.count))") { eventsList }
                 card("Hoe voel je je?") { morningSection }
-                if !session.factors.isEmpty || !session.remedies.isEmpty {
-                    card("Factoren en middelen") {
-                        Text((session.factors.map { "\($0.emoji) \($0.label)" } + session.remedies.map { "🛠️ \($0.label)" })
-                            .joined(separator: " · ")).font(.subheadline)
-                    }
-                }
                 if session.possibleApneaEvents >= 5 {
                     Label("Er werden \(session.possibleApneaEvents) lange stiltes tijdens het snurken gemeten. Dat kan op ademstops wijzen. Snoredle stelt geen diagnose: bespreek dit met je huisarts.",
                           systemImage: "exclamationmark.triangle.fill")
@@ -53,6 +51,7 @@ struct SessionDetailView: View {
         .navigationTitle(session.start.formatted(.dateTime.weekday(.wide).day().month()))
         .navigationBarTitleDisplayMode(.inline)
         .scrollDismissesKeyboard(.interactively)
+        .sheet(isPresented: $editFactors) { FactorEditor(session: session) }
         .fullScreenCover(isPresented: $showExplorer) { NightExplorerView(session: session, player: player) }
         .alert("Fragment", isPresented: Binding(get: { player.error != nil }, set: { if !$0 { player.error = nil } })) {
             Button("OK", role: .cancel) {}
@@ -180,6 +179,47 @@ struct SessionDetailView: View {
                 }.font(.subheadline)
             }
         }
+    }
+
+    // MARK: Factoren
+
+    @ViewBuilder private var factorsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if session.factors.isEmpty && session.remedies.isEmpty {
+                Text("Niets aangevinkt voor deze nacht.").font(.subheadline).foregroundStyle(.secondary)
+            } else {
+                FlowLayout(spacing: 6) {
+                    ForEach(session.factors) { f in tag(f.label, f.symbol, Theme.accent) }
+                    ForEach(session.remedies) { r in tag(r.label, r.symbol, .cyan) }
+                }
+            }
+            if let cmp = comparison {
+                Text(cmp).font(.footnote).foregroundStyle(.secondary)
+            }
+            Button(session.factors.isEmpty && session.remedies.isEmpty ? "Achteraf aanvinken" : "Aanpassen") { editFactors = true }
+                .font(.footnote.weight(.semibold))
+        }
+    }
+
+    private func tag(_ label: String, _ symbol: String, _ color: Color) -> some View {
+        Label(label, systemImage: symbol)
+            .font(.caption.weight(.medium))
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(color.opacity(0.15), in: Capsule())
+            .foregroundStyle(color)
+    }
+
+    /// Vergelijking met je gemiddelde van de andere nachten.
+    private var comparison: String? {
+        let others = allSessions.filter { $0.id != session.id && $0.end != nil && $0.duration > 3 * 3600 }
+        guard others.count >= 2, session.duration > 3 * 3600 else {
+            return "Na een paar nachten zie je hier hoe deze nacht zich verhoudt tot je gemiddelde."
+        }
+        let avg = Double(others.map(\.snoreScore).reduce(0, +)) / Double(others.count)
+        guard avg > 0 else { return nil }
+        let pct = Int(((Double(session.snoreScore) - avg) / avg * 100).rounded())
+        if abs(pct) < 10 { return "Je score lag rond je gemiddelde (\(Int(avg)))." }
+        return "Je score was \(abs(pct))% \(pct > 0 ? "hoger" : "lager") dan je gemiddelde (\(Int(avg)))."
     }
 
     // MARK: Nieuwe onderdelen
@@ -449,5 +489,45 @@ final class ClipPlayer: NSObject, ObservableObject {
         guard peak > 0.0001 else { return }
         var gain = min(40, 0.9 / peak)
         for ch in 0..<Int(b.format.channelCount) { vDSP_vsmul(d[ch], 1, &gain, d[ch], 1, n) }
+    }
+}
+
+/// Factoren en middelen achteraf aanpassen.
+struct FactorEditor: View {
+    @Bindable var session: SleepSession
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    Text("Wat speelde er?").font(.headline)
+                    FlowLayout(spacing: 8) {
+                        ForEach(SleepFactor.allCases) { f in
+                            Chip(label: f.label, symbol: f.symbol, isOn: session.factorsRaw.contains(f.rawValue)) {
+                                toggle(&session.factorsRaw, f.rawValue)
+                            }
+                        }
+                    }
+                    Text("Wat probeerde je?").font(.headline)
+                    FlowLayout(spacing: 8) {
+                        ForEach(Remedy.allCases) { r in
+                            Chip(label: r.label, symbol: r.symbol, isOn: session.remediesRaw.contains(r.rawValue)) {
+                                toggle(&session.remediesRaw, r.rawValue)
+                            }
+                        }
+                    }
+                }
+                .padding(20)
+            }
+            .background(NightBackground())
+            .navigationTitle("Aanpassen").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Klaar") { try? context.save(); dismiss() } } }
+        }
+    }
+
+    private func toggle(_ list: inout [String], _ v: String) {
+        if let i = list.firstIndex(of: v) { list.remove(at: i) } else { list.append(v) }
     }
 }
