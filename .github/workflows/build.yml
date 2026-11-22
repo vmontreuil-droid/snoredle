@@ -18,6 +18,7 @@ concurrency:
 jobs:
   build:
     name: Compileren (simulator)
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[build]')
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
@@ -49,7 +50,6 @@ jobs:
 
   testflight:
     name: Naar TestFlight
-    needs: build
     if: (github.event_name == 'workflow_dispatch' && inputs.testflight) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[testflight]'))
     runs-on: macos-latest
     env:

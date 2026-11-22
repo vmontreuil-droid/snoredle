@@ -3,6 +3,7 @@ import CoreMotion
 import HealthKit
 import WatchKit
 import WatchConnectivity
+import AVFoundation
 
 /// Draait de hele nacht op de Apple Watch:
 /// - houding via zwaartekrachtvector (CoreMotion) + kalibratieprofiel
@@ -189,6 +190,7 @@ final class NightTracker: NSObject, ObservableObject {
             }
             for p in SleepPosition.calibratable {
                 guidedStep = p
+                say("Lig nu op je \(p.label.lowercased())")
                 for _ in 0..<2 { WKInterfaceDevice.current().play(.notification); try? await Task.sleep(for: .milliseconds(600)) }
                 for i in stride(from: 10, to: 0, by: -1) {
                     guidedCountdown = i
@@ -200,7 +202,17 @@ final class NightTracker: NSObject, ObservableObject {
             guidedStep = nil
             guidedCountdown = 0
             WKInterfaceDevice.current().play(.success)
+            say("Klaar. Je houdingen zijn gekalibreerd.")
         }
+    }
+
+    private let speech = AVSpeechSynthesizer()
+    /// Gesproken instructie via de luidspreker van de watch.
+    private func say(_ text: String) {
+        let u = AVSpeechUtterance(string: text)
+        u.voice = AVSpeechSynthesisVoice(language: "nl-BE") ?? AVSpeechSynthesisVoice(language: "nl-NL")
+        u.rate = 0.48
+        speech.speak(u)
     }
 
     func send(_ msg: WatchMessage) {
