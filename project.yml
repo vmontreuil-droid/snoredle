@@ -80,6 +80,8 @@ targets:
     sources:
       - path: Watch
       - path: Shared
+    dependencies:
+      - target: SnoredleWatchWidgets
     entitlements:
       path: Watch/SnoredleWatch.entitlements
       properties:
@@ -137,3 +139,21 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: be.snoredle.app.widgets
         TARGETED_DEVICE_FAMILY: "1"
+
+  SnoredleWatchWidgets:
+    type: app-extension
+    platform: watchOS
+    sources:
+      - path: WatchWidgets
+    info:
+      path: WatchWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: $(APP_NAME)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleDevelopmentRegion: nl
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: be.snoredle.app.watchkitapp.widgets
