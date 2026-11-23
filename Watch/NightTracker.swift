@@ -117,15 +117,37 @@ final class NightTracker: NSObject, ObservableObject {
         let (pos, conf) = profile.classify(g)
         position = pos
 
-        let movement = accelBuffer.suffix(n).reduce(0, +)
+        // Beweging genormaliseerd naar "per 10 seconden", los van het meetinterval.
+        let recent = accelBuffer.suffix(n)
+        let movement = recent.isEmpty ? 0 : recent.reduce(0, +) / Double(recent.count) * 10
         accelBuffer.removeAll(keepingCapacity: true)
-        if movement > 0.5 { send(.movement(intensity: movement, at: .now)) }
+        let sample = PositionSamplePayload(position: pos, confidence: conf, gravity: g, at: .now)
+        sendHeartbeat(Heartbeat(sample: sample, movement: movement, heartRate: heartRate))
+    }
 
-        // Alleen versturen bij verandering of elke 5 min — spaart batterij.
-        if pos != lastSentPosition || Date().timeIntervalSince(lastSentAt) > 300 {
-            send(.positionSample(PositionSamplePayload(position: pos, confidence: conf, gravity: g, at: .now)))
-            lastSentPosition = pos; lastSentAt = .now
+    /// Seintje naar de iPhone; het antwoord kan een tikje bevatten. De watch→iPhone-richting werkt
+    /// ook als de iPhone-app op de achtergrond staat (iOS maakt hem wakker).
+    private func sendHeartbeat(_ hb: Heartbeat) {
+        guard let data = try? WatchMessage.heartbeat(hb).encoded() else { return }
+        let s = WCSession.default
+        guard s.activationState == .activated, s.isReachable else {
+            // iPhone even weg: houding en beweging bewaren voor later.
+            if hb.sample.position != lastSentPosition || Date().timeIntervalSince(lastSentAt) > 300 {
+                send(.positionSample(hb.sample)); lastSentPosition = hb.sample.position; lastSentAt = .now
+            }
+            if hb.movement > 0.5 { send(.movement(intensity: hb.movement, at: hb.sample.at)) }
+            return
         }
+        s.sendMessageData(data, replyHandler: { reply in
+            guard !reply.isEmpty, let msg = try? WatchMessage.decode(reply) else { return }
+            Task { @MainActor in
+                if case .nudge(let i) = msg {
+                    NightTracker.shared.nudge(i)
+                    NightTracker.shared.sendReliable(.nudgeDone(at: .now))
+                }
+            }
+        }, errorHandler: nil)
+        lastSentPosition = hb.sample.position; lastSentAt = .now
     }
 
     // MARK: Kalibratie
@@ -264,7 +286,7 @@ final class NightTracker: NSObject, ObservableObject {
             if isTracking { settings = s; sessionID = id; sendStatus() } else { start(id: id, settings: s) }
         case .stopSession: stop()
         case .nudge(let i):
-            if !settings.nudgeOnlyOnBack || position == .back || position == .unknown { nudge(i) }
+            nudge(i)
         case .startCalibration(let p): calibrate(p)
         case .calibrationProfile(let p): profile = p
         case .sessionState(let rec, let until):

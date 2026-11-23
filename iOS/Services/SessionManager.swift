@@ -364,7 +364,12 @@ final class SessionManager: ObservableObject {
         if settings.nudgeOnlyOnBack, currentPosition != .back, currentPosition != .unknown { return }
         hub.nudge(settings.nudgeIntensity)
         lastNudge = now
-        episodeNudged = true
+    }
+
+    /// De watch heeft echt getikt.
+    private func nudgeDelivered() {
+        if episodeStart != nil { episodeNudged = true }
+        else if let last = current?.events.max(by: { $0.start < $1.start }) { last.wasNudged = true }
     }
 
     private func updateNoiseFloor(_ db: Double) {
@@ -398,6 +403,8 @@ final class SessionManager: ObservableObject {
             currentPosition = p.position
             session.positions.append(PositionSample(at: p.at, position: p.position,
                                                     confidence: p.confidence, source: source))
+        case .nudgeDelivered:
+            nudgeDelivered()
         case .vital(let kind, let v, let at):
             session.vitals.append(VitalSample(at: at, kind: kind, value: v))
             if kind == .movement { AlarmService.shared.signal(movement: v, at: at) }

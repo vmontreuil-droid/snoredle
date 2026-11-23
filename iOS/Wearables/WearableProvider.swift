@@ -35,6 +35,7 @@ enum WearableEvent {
     case status(WatchStatus)
     case availabilityChanged
     case command(WatchCommand)
+    case nudgeDelivered(Date)
 }
 
 /// Lege standaardimplementaties voor providers die iets niet kunnen.

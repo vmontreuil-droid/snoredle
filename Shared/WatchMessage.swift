@@ -18,10 +18,22 @@ public enum WatchMessage: Codable, Sendable {
     case calibrationCaptured(position: SleepPosition, gravity: Vector3)
     case watchStatus(WatchStatus)
     case request(WatchCommand)                       // bediening vanaf de watch
+    case heartbeat(Heartbeat)                        // elke paar seconden; antwoord kan een tikje bevatten
+    case nudgeDone(at: Date)                         // watch bevestigt dat er getikt is
 
     public func encoded() throws -> Data { try JSONEncoder.snoredle.encode(self) }
     public static func decode(_ data: Data) throws -> WatchMessage {
         try JSONDecoder.snoredle.decode(WatchMessage.self, from: data)
+    }
+}
+
+/// Periodiek seintje van de watch tijdens de nacht.
+public struct Heartbeat: Codable, Sendable, Hashable {
+    public var sample: PositionSamplePayload
+    public var movement: Double
+    public var heartRate: Double?
+    public init(sample: PositionSamplePayload, movement: Double, heartRate: Double?) {
+        self.sample = sample; self.movement = movement; self.heartRate = heartRate
     }
 }
 

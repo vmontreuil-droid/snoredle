@@ -35,7 +35,50 @@ final class AppleWatchProvider: NSObject, WearableProvider, WCSessionDelegate {
         send(.startSession(sessionID: id, settings: settings), reliable: true)
     }
     func stopSession(id: UUID) { send(.stopSession(sessionID: id), reliable: true) }
-    func nudge(_ intensity: NudgeIntensity) { send(.nudge(intensity: intensity), reliable: false) }
+    /// Tikje klaarzetten. De watch haalt het op bij zijn volgende seintje (werkt ook 's nachts
+    /// met de iPhone-app op de achtergrond). Is de watch rechtstreeks bereikbaar, dan meteen.
+    func nudge(_ intensity: NudgeIntensity) {
+        lock.lock(); pendingNudge = (intensity, Date()); lock.unlock()
+        guard let s = session, s.activationState == .activated, s.isReachable,
+              let data = try? WatchMessage.nudge(intensity: intensity).encoded() else { return }
+        s.sendMessageData(data, replyHandler: { [weak self] _ in
+            guard let self else { return }
+            self.lock.lock(); self.pendingNudge = nil; self.lock.unlock()
+            self.subject.send(.nudgeDelivered(.now))
+        }, errorHandler: nil)
+    }
+
+    private let lock = NSLock()
+    private var pendingNudge: (NudgeIntensity, Date)?
+    private var lastPositionSent: SleepPosition?
+    private var lastPositionAt = Date.distantPast
+
+    private func takePendingNudge() -> NudgeIntensity? {
+        lock.lock(); defer { lock.unlock() }
+        guard let (i, at) = pendingNudge else { return nil }
+        pendingNudge = nil
+        return Date().timeIntervalSince(at) < 90 ? i : nil      // te oud = niet meer tikken
+    }
+
+    func session(_ session: WCSession, didReceiveMessageData messageData: Data, replyHandler: @escaping (Data) -> Void) {
+        guard let msg = try? WatchMessage.decode(messageData) else { replyHandler(Data()); return }
+        if case .heartbeat(let hb) = msg {
+            // Houding alleen doorgeven bij verandering of elke 5 min.
+            if hb.sample.position != lastPositionSent || Date().timeIntervalSince(lastPositionAt) > 300 {
+                lastPositionSent = hb.sample.position; lastPositionAt = .now
+                subject.send(.position(hb.sample))
+            }
+            if hb.movement > 0.3 { subject.send(.vital(.movement, hb.movement, hb.sample.at)) }
+            if let i = takePendingNudge(), let d = try? WatchMessage.nudge(intensity: i).encoded() {
+                replyHandler(d)
+            } else {
+                replyHandler(Data())
+            }
+        } else {
+            handle(messageData)
+            replyHandler(Data())
+        }
+    }
     func calibrate(_ position: SleepPosition) { send(.startCalibration(position: position), reliable: false) }
     func send(profile: CalibrationProfile) {
         // applicationContext overleeft herstarts: de watch heeft altijd het laatste profiel.
@@ -101,6 +144,10 @@ final class AppleWatchProvider: NSObject, WearableProvider, WCSessionDelegate {
         case .calibrationCaptured(let pos, let g): subject.send(.calibrated(pos, g))
         case .watchStatus(let s): subject.send(.status(s))
         case .request(let c): subject.send(.command(c))
+        case .nudgeDone(let at): subject.send(.nudgeDelivered(at))
+        case .heartbeat(let hb):
+            subject.send(.position(hb.sample))
+            if hb.movement > 0.3 { subject.send(.vital(.movement, hb.movement, hb.sample.at)) }
         default: break
         }
     }
