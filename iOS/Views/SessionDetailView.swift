@@ -14,6 +14,8 @@ struct SessionDetailView: View {
     @State private var picked: Date?
     @State private var editFactors = false
     @State private var soundFilter: NightSoundKind?
+    @State private var shareImage: Image?
+    @State private var sharePDF: URL?
     @ObservedObject private var transcriber = TranscriptionService.shared
     @Query(sort: \SleepSession.start) private var allSessions: [SleepSession]
 
@@ -59,15 +61,21 @@ struct SessionDetailView: View {
             Button("OK", role: .cancel) {}
         } message: { Text(player.error ?? "") }
         .onDisappear { player.stop() }
+        .task(id: session.snoreScore) {
+            // Eén keer per nacht klaarzetten, niet bij elke schermverversing.
+            shareImage = NightShareCard.image(for: session)
+            sharePDF = ExportService.pdf([session])
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    ShareLink(item: NightShareCard.image(for: session),
-                              preview: SharePreview("Mijn nacht met Snoredle", image: NightShareCard.image(for: session))) {
-                        Label("Als afbeelding", systemImage: "photo")
+                    if let img = shareImage {
+                        ShareLink(item: img, preview: SharePreview("Mijn nacht met Snoredle", image: img)) {
+                            Label("Als afbeelding", systemImage: "photo")
+                        }
                     }
-                    ShareLink(item: ExportService.pdf([session])) {
-                        Label("Rapport (PDF)", systemImage: "doc.richtext")
+                    if let pdf = sharePDF {
+                        ShareLink(item: pdf) { Label("Rapport (PDF)", systemImage: "doc.richtext") }
                     }
                     if let h = highlight {
                         ShareLink(item: ClipRecorder.url(for: h.clip),

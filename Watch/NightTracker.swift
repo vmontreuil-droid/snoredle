@@ -28,6 +28,7 @@ final class NightTracker: NSObject, ObservableObject {
     private var builder: HKLiveWorkoutBuilder?
     private var settings = WatchSettings()
     private var sessionID: UUID?
+    private var trackingSince = Date()
 
     private var gravityBuffer: [Vector3] = []
     private var accelBuffer: [Double] = []
@@ -43,6 +44,7 @@ final class NightTracker: NSObject, ObservableObject {
         self.settings = settings
         sessionID = id
         isTracking = true
+        trackingSince = .now
         startWorkout()
         startMotion()
         sampleTimer = Timer.scheduledTimer(withTimeInterval: settings.sampleIntervalSeconds, repeats: true) { [weak self] _ in
@@ -112,6 +114,8 @@ final class NightTracker: NSObject, ObservableObject {
     }
 
     private func emitSample() {
+        // Veiligheid: nooit langer dan 14 uur meten (bv. als de iPhone-app afgesloten werd).
+        if Date().timeIntervalSince(trackingSince) > 14 * 3600 { stop(); phoneRecording = false; return }
         let n = Int(settings.sampleIntervalSeconds)
         guard let g = averageGravity(last: n) else { return }
         let (pos, conf) = profile.classify(g)
@@ -283,7 +287,16 @@ final class NightTracker: NSObject, ObservableObject {
     func handle(_ msg: WatchMessage) {
         switch msg {
         case .startSession(let id, let s):
-            if isTracking { settings = s; sessionID = id; sendStatus() } else { start(id: id, settings: s) }
+            if isTracking {
+                // Al gestart via de iPhone (workout): instellingen en meetinterval bijwerken.
+                settings = s; sessionID = id
+                sampleTimer?.invalidate()
+                sampleTimer = Timer.scheduledTimer(withTimeInterval: s.sampleIntervalSeconds, repeats: true) { [weak self] _ in
+                    Task { @MainActor in self?.emitSample() }
+                }
+                phoneRecording = true
+                sendStatus()
+            } else { start(id: id, settings: s); phoneRecording = true }
         case .stopSession: stop()
         case .nudge(let i):
             nudge(i)

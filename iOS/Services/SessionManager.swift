@@ -2,6 +2,7 @@ import Foundation
 import SwiftData
 import Combine
 import UIKit
+import AVFoundation
 
 /// Stuurt één nacht aan: microfoon, snurkepisodes, clips, watch, tikjes, opslag.
 @MainActor
@@ -69,6 +70,22 @@ final class SessionManager: ObservableObject {
             Task { @MainActor in await self?.stop() }
         }
         context = AppData.container.mainContext
+        recoverUnfinishedNights()
+    }
+
+    /// Werd de app 's nachts afgesloten (geheugen, update, herstart), dan blijft er een nacht zonder
+    /// einde over. Die sluiten we af op het laatste meetpunt, zodat hij in je lijst verschijnt.
+    private func recoverUnfinishedNights() {
+        guard let ctx = context,
+              let open = try? ctx.fetch(FetchDescriptor<SleepSession>(predicate: #Predicate<SleepSession> { $0.end == nil })) else { return }
+        for s in open where s.id != current?.id {
+            let lastSample = s.loudness.map(\.at).max() ?? s.events.map(\.end).max() ?? s.start
+            if lastSample.timeIntervalSince(s.start) < 600 { ctx.delete(s); continue }   // te kort, weg ermee
+            s.end = lastSample
+            s.note = s.note.isEmpty ? "Meting werd onderbroken (app afgesloten)." : s.note
+            SnoreAnalysis.summarize(s)
+        }
+        try? ctx.save()
     }
 
     // MARK: Bediening van buitenaf (watch, Siri, Opdrachten)
@@ -136,6 +153,11 @@ final class SessionManager: ObservableObject {
 
     func start(factors: [SleepFactor], remedies: [Remedy]) {
         guard state == .idle, let context else { return }
+        if AVAudioApplication.shared.recordPermission == .denied {
+            lastError = "Snoredle heeft geen toegang tot de microfoon. Zet het aan in Instellingen › Apps › Snoredle."
+            return
+        }
+        lastError = nil
         let session = SleepSession()
         session.factorsRaw = factors.map(\.rawValue)
         session.remediesRaw = remedies.map(\.rawValue)
@@ -154,6 +176,7 @@ final class SessionManager: ObservableObject {
         detector.calibrationOffset = settings.calibrationOffset
         do { try detector.start() } catch {
             lastError = "Microfoon kon niet starten: \(error.localizedDescription)"
+            hub.stop(id: session.id)
             context.delete(session); current = nil; return
         }
 
@@ -190,7 +213,9 @@ final class SessionManager: ObservableObject {
         session.end = .now
 
         if settings.useHealthKit {
+            let live = session.vitals.filter { $0.kind == .heartRate }.map(\.at)
             for (kind, value, at, _) in await HealthKitService.shared.vitals(from: session.start, to: .now) {
+                if kind == .heartRate, live.contains(where: { abs($0.timeIntervalSince(at)) < 60 }) { continue }
                 session.vitals.append(VitalSample(at: at, kind: kind, value: value))
             }
         }

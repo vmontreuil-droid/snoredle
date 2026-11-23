@@ -54,7 +54,8 @@ struct TrendsView: View {
     @Query(sort: \SleepSession.start) private var sessions: [SleepSession]
     @EnvironmentObject var store: StoreManager
     @State private var range = 30
-    @State private var exportURL: URL?
+    @State private var reportURL: URL?
+    @State private var csvURL: URL?
 
     var done: [SleepSession] {
         let limit = Date().addingTimeInterval(-Double(range) * 86_400)
@@ -143,9 +144,11 @@ struct TrendsView: View {
                     box("Delen en exporteren") {
                         HStack {
                             if store.isPlus {
-                                ShareLink(item: ExportService.pdf(done)) { Label("Rapport voor arts (PDF)", systemImage: "doc.richtext") }
+                                if let pdf = reportURL {
+                                    ShareLink(item: pdf) { Label("Rapport voor arts (PDF)", systemImage: "doc.richtext") }
+                                } else { ProgressView() }
                                 Spacer()
-                                ShareLink(item: ExportService.csv(done)) { Label("CSV", systemImage: "tablecells") }
+                                if let csv = csvURL { ShareLink(item: csv) { Label("CSV", systemImage: "tablecells") } }
                             } else {
                                 NavigationLink("Export met Snoredle Plus") { PaywallView() }
                             }
@@ -155,6 +158,10 @@ struct TrendsView: View {
             }
             .background(NightBackground())
             .navigationTitle("Inzichten")
+            .task(id: "\(range)-\(done.count)") {
+                reportURL = ExportService.pdf(done)
+                csvURL = ExportService.csv(done)
+            }
         }
     }
 

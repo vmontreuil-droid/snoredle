@@ -138,15 +138,38 @@ final class AlarmService: ObservableObject {
 
     // MARK: Plannen bij het systeem
 
-    /// Zet alle wekkers opnieuw klaar bij iOS. Veilig om vaak aan te roepen.
+    private var syncTask: Task<Void, Never>?
+
+    /// Zet alle wekkers opnieuw klaar bij iOS. Veilig om vaak aan te roepen: oproepen lopen na elkaar,
+    /// zodat twee gelijktijdige synchronisaties elkaars wekkers niet wissen.
     func sync() async {
+        let previous = syncTask
+        let task = Task { @MainActor in
+            await previous?.value
+            await self.performSync()
+        }
+        syncTask = task
+        await task.value
+    }
+
+    private func performSync() async {
         #if canImport(AlarmKit)
         if #available(iOS 26.0, *) {
             guard await AlarmKitBackend.authorize() else { permissionDenied = true; return }
             permissionDenied = false
             AlarmKitBackend.cancelAll()
+            var skips = Self.loadSkips()
+            skips = skips.filter { $0.value > .now }          // verlopen overslagen opruimen
+            Self.saveSkips(skips)
             for a in alarms where a.enabled {
-                try? await AlarmKitBackend.scheduleRepeating(a)
+                if let skipUntil = skips[a.id] {
+                    // Vandaag al slim gewekt: alleen de volgende keer plannen (herhaling komt bij de volgende sync terug).
+                    if let next = a.next(after: skipUntil.addingTimeInterval(60)) {
+                        _ = try? await AlarmKitBackend.scheduleOnce(at: next, title: a.label, id: a.id)
+                    }
+                } else {
+                    try? await AlarmKitBackend.scheduleRepeating(a)
+                }
             }
             return
         }
@@ -211,7 +234,10 @@ final class AlarmService: ObservableObject {
         armedFor = .now
         #if canImport(AlarmKit)
         if #available(iOS 26.0, *) {
-            // De gewone wekker van vandaag overslaan; morgen staat hij er weer (disarm → sync).
+            // De gewone wekker van vandaag overslaan; morgen staat hij er weer.
+            var skips = Self.loadSkips()
+            if let original = item.next(after: .now) { skips[item.id] = original }
+            Self.saveSkips(skips)
             AlarmKitBackend.cancel(item.id)
             if let tomorrow = item.next(after: .now.addingTimeInterval(3600)) {
                 _ = try? await AlarmKitBackend.scheduleOnce(at: tomorrow, title: item.label, id: item.id)
@@ -221,6 +247,15 @@ final class AlarmService: ObservableObject {
         }
         #endif
         startRinging()
+    }
+
+    private static func loadSkips() -> [UUID: Date] {
+        guard let d = UserDefaults.standard.data(forKey: "alarms.skips"),
+              let m = try? JSONDecoder().decode([UUID: Date].self, from: d) else { return [:] }
+        return m
+    }
+    private static func saveSkips(_ m: [UUID: Date]) {
+        if let d = try? JSONEncoder().encode(m) { UserDefaults.standard.set(d, forKey: "alarms.skips") }
     }
 
     // MARK: AlarmKit-opvolging

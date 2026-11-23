@@ -41,11 +41,14 @@ final class AppleWatchProvider: NSObject, WearableProvider, WCSessionDelegate {
         lock.lock(); pendingNudge = (intensity, Date()); lock.unlock()
         guard let s = session, s.activationState == .activated, s.isReachable,
               let data = try? WatchMessage.nudge(intensity: intensity).encoded() else { return }
+        // Rechtstreeks proberen; lukt het niet, dan blijft het klaarstaan voor het volgende seintje.
+        lock.lock(); pendingNudge = nil; lock.unlock()
         s.sendMessageData(data, replyHandler: { [weak self] _ in
+            self?.subject.send(.nudgeDelivered(.now))
+        }, errorHandler: { [weak self] _ in
             guard let self else { return }
-            self.lock.lock(); self.pendingNudge = nil; self.lock.unlock()
-            self.subject.send(.nudgeDelivered(.now))
-        }, errorHandler: nil)
+            self.lock.lock(); if self.pendingNudge == nil { self.pendingNudge = (intensity, Date()) }; self.lock.unlock()
+        })
     }
 
     private let lock = NSLock()

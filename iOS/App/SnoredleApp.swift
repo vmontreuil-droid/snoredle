@@ -44,6 +44,7 @@ struct SnoredleApp: App {
                     manager.attach(container.mainContext)
                     lock.appLaunched()
                     Task { await AlarmService.shared.sync() }
+                    if settings.didOnboard { Task { await NotificationService.shared.requestAuthorization() } }
                     LiveActivityService.shared.cleanupStale(isRecording: manager.state != .idle)
                     WidgetBridge.publish(context: container.mainContext)
                     NotificationService.shared.refreshWeekly(context: container.mainContext)

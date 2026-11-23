@@ -65,7 +65,8 @@ final class ClipRecorder {
     func beginClip(format: AVAudioFormat) -> String? {
         lock.lock(); defer { lock.unlock() }
         guard file == nil else { return currentName }
-        let name = "snore-\(Int(Date().timeIntervalSince1970)).m4a"
+        // Unieke naam: twee fragmenten in dezelfde seconde mogen elkaar niet overschrijven.
+        let name = "snore-\(Int(Date().timeIntervalSince1970))-\(UUID().uuidString.prefix(6)).m4a"
         let settings: [String: Any] = [
             AVFormatIDKey: kAudioFormatMPEG4AAC,
             AVSampleRateKey: format.sampleRate,
