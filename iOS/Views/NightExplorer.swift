@@ -18,7 +18,7 @@ struct NightExplorerView: View {
     private var end: Date { session.end ?? .now }
     private var total: Double { max(600, end.timeIntervalSince(start)) }
 
-    private var loud: [LoudnessSample] { session.loudness.sorted { $0.at < $1.at } }
+    private var loud: [LoudnessSample] { session.nightLoudness }
     private var events: [SnoreEvent] { session.events.sorted { $0.start < $1.start } }
     private var positions: [PositionSample] { session.positions.sorted { $0.at < $1.at } }
     private var hr: [VitalSample] { session.vitals.filter { $0.kind == .heartRate }.sorted { $0.at < $1.at } }
@@ -40,7 +40,7 @@ struct NightExplorerView: View {
                 .padding()
             }
             .background(NightBackground())
-            .navigationTitle(session.start.formatted(.dateTime.weekday(.wide).day().month(.wide)))
+            .navigationTitle(session.nightTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Klaar") { player.stop(); dismiss() } } }
             .onAppear {

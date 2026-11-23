@@ -41,6 +41,24 @@ final class SleepSession {
     }
 
     var duration: TimeInterval { (end ?? .now).timeIntervalSince(start) }
+
+    /// "zo 22 → ma 23 nov" voor een nacht over middernacht, anders "zondag 22 nov".
+    var nightTitle: String {
+        let nl = Locale(identifier: "nl_BE")
+        let cal = Calendar.current
+        guard let e = end, !cal.isDate(start, inSameDayAs: e) else {
+            return start.formatted(.dateTime.weekday(.wide).day().month().locale(nl))
+        }
+        let a = start.formatted(.dateTime.weekday(.abbreviated).day().locale(nl))
+        let b = e.formatted(.dateTime.weekday(.abbreviated).day().month().locale(nl))
+        return "\(a) → \(b)"
+    }
+
+    /// Alleen meetpunten binnen de nacht (oudere versies bewaarden soms een te vroeg eerste punt).
+    var nightLoudness: [LoudnessSample] {
+        let s = start.addingTimeInterval(-60), e = (end ?? .now).addingTimeInterval(60)
+        return loudness.filter { $0.at >= s && $0.at <= e }.sorted { $0.at < $1.at }
+    }
     var factors: [SleepFactor] { factorsRaw.compactMap(SleepFactor.init(rawValue:)) }
     var remedies: [Remedy] { remediesRaw.compactMap(Remedy.init(rawValue:)) }
     var snorePercentage: Double { sleepDuration > 0 ? min(1, snoreMinutes * 60 / sleepDuration) : 0 }

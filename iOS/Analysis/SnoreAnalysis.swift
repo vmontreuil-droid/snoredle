@@ -42,7 +42,7 @@ enum SnoreAnalysis {
         s.loudSnoreMinutes = loud
         s.epicSnoreMinutes = epic
         s.snoreScore = score(light: light, loud: loud, epic: epic, hours: s.sleepDuration / 3600)
-        let dbs = s.loudness.map(\.decibel)
+        let dbs = s.nightLoudness.map(\.decibel)
         s.averageDecibel = dbs.isEmpty ? 0 : dbs.reduce(0, +) / Double(dbs.count)
         s.peakDecibel = s.events.map(\.peakDecibel).max() ?? dbs.max() ?? 0
         s.nudgeCount = s.events.filter(\.wasNudged).count

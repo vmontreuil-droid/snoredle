@@ -50,7 +50,7 @@ struct SessionDetailView: View {
             }.padding()
         }
         .background(NightBackground())
-        .navigationTitle(session.start.formatted(.dateTime.weekday(.wide).day().month()))
+        .navigationTitle(session.nightTitle)
         .navigationBarTitleDisplayMode(.inline)
         .scrollDismissesKeyboard(.interactively)
         .sheet(isPresented: $editFactors) { FactorEditor(session: session) }
@@ -106,7 +106,7 @@ struct SessionDetailView: View {
 
     private var loudnessChart: some View {
         Chart {
-            ForEach(session.loudness.sorted { $0.at < $1.at }) { s in
+            ForEach(session.nightLoudness) { s in
                 AreaMark(x: .value("Tijd", s.at), y: .value("dB", s.decibel))
                     .foregroundStyle(.white.opacity(0.15))
             }
@@ -121,6 +121,7 @@ struct SessionDetailView: View {
         }
         .chartXAxis { AxisMarks(values: .stride(by: .hour)) { AxisValueLabel(format: .dateTime.hour()) } }
         .chartYAxisLabel("dB")
+        .chartXScale(domain: session.start...(session.end ?? .now))
         .chartXSelection(value: $picked)
         .chartOverlay { _ in EmptyView() }
         .overlay(alignment: .topLeading) {

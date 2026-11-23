@@ -281,12 +281,12 @@ struct CompareView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Volume per uur van de nacht").font(.subheadline.weight(.semibold))
                             Chart {
-                                ForEach(a.loudness) { s in
+                                ForEach(a.nightLoudness) { s in
                                     LineMark(x: .value("Uur", s.at.timeIntervalSince(a.start) / 3600), y: .value("dB", s.decibel),
                                              series: .value("Nacht", "A"))
                                         .foregroundStyle(Theme.accent)
                                 }
-                                ForEach(b.loudness) { s in
+                                ForEach(b.nightLoudness) { s in
                                     LineMark(x: .value("Uur", s.at.timeIntervalSince(b.start) / 3600), y: .value("dB", s.decibel),
                                              series: .value("Nacht", "B"))
                                         .foregroundStyle(.cyan)

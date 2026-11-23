@@ -144,6 +144,9 @@ final class SessionManager: ObservableObject {
         current = session
         resetEpisode(); clipsThisNight = 0; eventCount = 0
         soundTracks = [:]; nightSoundCount = 0
+        // Minuut-teller opnieuw starten, anders krijgt het eerste meetpunt een oud tijdstip.
+        minuteDb = []; minuteSnore = []; minuteStart = .now
+        recentDb = []; noiseFloor = 30
         UIApplication.shared.isIdleTimerDisabled = false   // scherm mag uit; audio loopt door
 
         hub.start(id: session.id, settings: settings.watchSettings)
