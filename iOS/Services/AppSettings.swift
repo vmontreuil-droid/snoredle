@@ -24,6 +24,8 @@ final class AppSettings: ObservableObject {
     @AppStorage("nudgeAfterSeconds") var nudgeAfterSeconds: Double = 20  // na x sec. aanhoudend snurken
     @AppStorage("nudgeCooldownMinutes") var nudgeCooldownMinutes: Double = 3
     @AppStorage("nudgeQuietFirstMinutes") var nudgeQuietFirstMinutes: Int = 20 // eerst inslapen
+    @AppStorage("nudgeSound") var nudgeSoundRaw: String = NudgeSound.none.rawValue
+    @AppStorage("nudgeSoundVolume") var nudgeSoundVolume: Double = 0.8
     @AppStorage("positionIntervalSeconds") var positionIntervalSeconds: Double = 10
 
     // Gezondheid

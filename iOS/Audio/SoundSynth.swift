@@ -3,9 +3,9 @@ import SwiftUI
 
 /// Geluiden die Snoredle zelf genereert (geen audiobestanden nodig, geen licenties).
 enum SynthSound: String, CaseIterable, Identifiable {
-    case rain, ocean, fan, pink, brown, white, alarm
+    case rain, ocean, fan, pink, brown, white, alarm, chime, beep, whistle
     var id: String { rawValue }
-    static var sleepSounds: [SynthSound] { allCases.filter { $0 != .alarm } }
+    static var sleepSounds: [SynthSound] { [.rain, .ocean, .fan, .pink, .brown, .white] }
 
     var label: String {
         switch self {
@@ -16,6 +16,9 @@ enum SynthSound: String, CaseIterable, Identifiable {
         case .brown: "Bruine ruis"
         case .white: "Witte ruis"
         case .alarm: "Wekker"
+        case .chime: "Belletje"
+        case .beep: "Piep"
+        case .whistle: "Fluitje"
         }
     }
     var symbol: String {
@@ -27,6 +30,9 @@ enum SynthSound: String, CaseIterable, Identifiable {
         case .brown: "waveform.path"
         case .white: "aqi.medium"
         case .alarm: "alarm.fill"
+        case .chime: "bell.fill"
+        case .beep: "dot.radiowaves.left.and.right"
+        case .whistle: "music.note"
         }
     }
 }
@@ -44,6 +50,7 @@ private final class SynthState {
     var brown: Float = 0
     var lp: Float = 0
     var drop: Float = 0
+    var whistlePhase: Double = 0
     var dropDecay: Float = 0.999
 
     @inline(__always) func white() -> Float { Float.random(in: -1...1) }
@@ -89,6 +96,22 @@ private final class SynthState {
             let env = on ? Float(exp(-local * 9)) : 0
             let f = phase < 0.15 ? 880.0 : 1320.0
             v = Float(sin(2 * .pi * f * t)) * env * 0.6
+        case .chime:
+            // Heldere bel: grondtoon + boventonen, langzaam uitstervend, elke 1,2 s.
+            let p = t.truncatingRemainder(dividingBy: 1.2)
+            let env = Float(exp(-p * 3.5))
+            v = Float(sin(2 * .pi * 1046 * t) + 0.5 * sin(2 * .pi * 2093 * t) + 0.25 * sin(2 * .pi * 3140 * t)) * env * 0.45
+        case .beep:
+            let p = t.truncatingRemainder(dividingBy: 0.5)
+            v = p < 0.18 ? Float(sin(2 * .pi * 1500 * t)) * 0.55 : 0
+        case .whistle:
+            // Stijgend fluitje van 900 naar 1800 Hz in 0,5 s, elke seconde.
+            let p = t.truncatingRemainder(dividingBy: 1.0)
+            if p < 0.5 {
+                let f = 900 + 1800 * p
+                whistlePhase += 2 * .pi * f / sampleRate
+                v = Float(sin(whistlePhase)) * 0.5 * Float(min(1, p * 20))
+            } else { v = 0 }
         }
         if gain != target {
             gain += step
@@ -172,15 +195,63 @@ final class SleepSoundController: ObservableObject {
     @Published var timerMinutes: Int = 30
     @Published private(set) var isPlaying = false
     @Published private(set) var endsAt: Date?
+    /// Slim inslapen: stoppen zodra je een tijd stil ligt (timerMinutes == -1).
+    @Published private(set) var stillSince: Date?
+    @Published private(set) var asleepNote: String?
+    @Published private(set) var stillMinutesNeeded = 10
+    private var lastRestless = Date()
+    private var startedAt = Date()
+    private var watchTask: Task<Void, Never>?
 
     private let synth = SoundSynth()
     private var timerTask: Task<Void, Never>?
 
-    func play() {
+    var untilAsleep: Bool { timerMinutes == -1 }
+
+    /// Beweging van de watch (per 10 s genormaliseerd). Groter dan 1 = je beweegt nog.
+    func noteMovement(_ v: Double) {
+        guard isPlaying, untilAsleep else { return }
+        if v >= 1.0 { lastRestless = .now; stillSince = nil }
+    }
+
+    /// Test: stopt al na 1 minuut stilliggen.
+    func testSmartSleep() {
+        timerMinutes = -1
+        play(stillMinutes: 1)
+    }
+
+    func play(stillMinutes: Int = 10) {
         synth.play(sound, volume: Float(volume))
         isPlaying = true
-        timerTask?.cancel()
-        if timerMinutes > 0 {
+        asleepNote = nil
+        timerTask?.cancel(); watchTask?.cancel()
+        startedAt = .now; lastRestless = .now
+        stillMinutesNeeded = stillMinutes
+        if untilAsleep {
+            endsAt = nil
+            DiagLog.shared.log("inslapen", "slaapgeluid tot ik slaap (stil: \(stillMinutes) min)")
+            watchTask = Task { [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(15))
+                    guard let self else { return }
+                    let still = Date().timeIntervalSince(self.lastRestless)
+                    self.stillSince = still > 30 ? self.lastRestless : nil
+                    let hasWatch = WearableHub.shared.hasPositionSource && SessionManager.shared.state != .idle
+                    if hasWatch, still >= Double(self.stillMinutesNeeded * 60) {
+                        self.asleepNote = "In slaap gevallen om \(self.lastRestless.addingTimeInterval(60).formatted(date: .omitted, time: .shortened))"
+                        DiagLog.shared.log("inslapen", "stil sinds \(Int(still / 60)) min → geluid uitfaden")
+                        self.stop(fade: 45)
+                        return
+                    }
+                    // Zonder watch (of zonder meting): na 45 min stoppen; met watch hoogstens 90 min.
+                    if Date().timeIntervalSince(self.startedAt) >= (hasWatch ? 90 : 45) * 60 {
+                        DiagLog.shared.log("inslapen", "maximumtijd bereikt → uitfaden")
+                        self.stop(fade: 45)
+                        return
+                    }
+                }
+            }
+        } else if timerMinutes > 0 {
             let end = Date().addingTimeInterval(Double(timerMinutes * 60))
             endsAt = end
             timerTask = Task { [weak self] in
@@ -199,7 +270,8 @@ final class SleepSoundController: ObservableObject {
     }
 
     func stop(fade: Double = 2) {
-        timerTask?.cancel()
+        timerTask?.cancel(); watchTask?.cancel()
+        stillSince = nil
         synth.stop(fade: fade)
         isPlaying = false
         endsAt = nil
@@ -237,10 +309,28 @@ struct SleepSoundsSheet: View {
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     Label("Stopt na", systemImage: "timer").font(.subheadline.weight(.semibold))
+                    if !c.untilAsleep {
                     Picker("Timer", selection: $c.timerMinutes) {
                         Text("15 min").tag(15); Text("30 min").tag(30); Text("45 min").tag(45)
                         Text("1 uur").tag(60); Text("Nooit").tag(0)
                     }.pickerStyle(.segmented)
+                    }
+                    Toggle(isOn: Binding(get: { c.untilAsleep }, set: { c.timerMinutes = $0 ? -1 : 30 })) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Slim: tot ik slaap").font(.subheadline.weight(.semibold))
+                            Text("Stopt als je watch merkt dat je 10 min stil ligt. Werkt tijdens een gestarte nacht; anders na 45 min.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .tint(Theme.accent)
+                    if c.isPlaying, c.untilAsleep {
+                        Text(c.stillSince.map { "Je ligt stil sinds \($0.formatted(date: .omitted, time: .shortened)) · stopt na \(c.stillMinutesNeeded) min stil" }
+                             ?? "Wacht tot je stil ligt…")
+                            .font(.caption).foregroundStyle(Theme.accent)
+                    }
+                    if let n = c.asleepNote { Text(n).font(.caption).foregroundStyle(.green) }
+                    Button("Test slim inslapen (stopt na 1 min stilliggen)") { c.testSmartSleep() }
+                        .font(.footnote)
                     Text("Tijdens het geluid meet Snoredle geen snurken. Daarna faden de geluiden rustig uit en begint de meting.")
                         .font(.caption).foregroundStyle(.secondary)
                 }

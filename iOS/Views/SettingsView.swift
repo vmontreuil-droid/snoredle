@@ -104,6 +104,22 @@ struct SettingsView: View {
                     Text("Favorieten worden nooit automatisch verwijderd.").font(.caption).foregroundStyle(.secondary)
                 }
 
+                Section {
+                    Picker("Geluid", selection: $s.nudgeSoundRaw) {
+                        ForEach(NudgeSound.allCases) { Text($0.label).tag($0.rawValue) }
+                    }
+                    if s.nudgeSoundRaw != NudgeSound.none.rawValue {
+                        HStack {
+                            Image(systemName: "speaker.fill").foregroundStyle(.secondary)
+                            Slider(value: $s.nudgeSoundVolume, in: 0.1...1)
+                            Image(systemName: "speaker.wave.3.fill").foregroundStyle(.secondary)
+                        }
+                        Button("Test geluid") { NudgeSoundPlayer.shared.play() }
+                    }
+                } header: { Text("Geluid bij snurken") } footer: {
+                    Text("Je iPhone speelt dit geluid als je snurkt (met dezelfde regels als de tikjes: na x seconden, alleen op je rug als je watch dat weet). Werkt ook zonder watch. Zet je iPhone-volume hoog genoeg.")
+                }
+
                 Section("Watch en tikjes") {
                     Toggle("Tikje geven bij snurken", isOn: $s.nudgeEnabled)
                     if s.nudgeEnabled {

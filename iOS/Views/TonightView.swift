@@ -15,6 +15,7 @@ struct TonightView: View {
     @State private var showAllFactors = false
     @State private var showSounds = false
     @State private var healthNote: String?
+    @State private var showBreathing = false
     @ObservedObject private var sounds = SleepSoundController.shared
 
     var body: some View {
@@ -44,6 +45,25 @@ struct TonightView: View {
                                 Text("Slaapgeluiden").font(.subheadline.weight(.semibold))
                                 Text(sounds.isPlaying ? "\(sounds.sound.label) speelt" : "Regen, zee, ruis… om in te slapen")
                                     .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                        }
+                        .padding(.horizontal, 12).padding(.vertical, 10)
+                        .background(.white.opacity(0.05), in: Capsule())
+                        .overlay(Capsule().strokeBorder(.white.opacity(0.08)))
+                    }
+                    .buttonStyle(.plain)
+
+                    Button { showBreathing = true } label: {
+                        HStack(spacing: 12) {
+                            ZStack {
+                                Circle().fill(.white.opacity(0.06))
+                                Image(systemName: "wind").foregroundStyle(Theme.accent)
+                            }.frame(width: 38, height: 38)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("Ademhaling 4-7-8").font(.subheadline.weight(.semibold))
+                                Text("Twee minuten om tot rust te komen").font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
                             Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
@@ -95,6 +115,7 @@ struct TonightView: View {
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showCalibration) { CalibrationView() }
             .sheet(isPresented: $showSounds) { SleepSoundsSheet() }
+            .fullScreenCover(isPresented: $showBreathing) { BreathingView() }
             .onAppear {
                 remedies = Set(lastRemediesRaw.split(separator: ",").compactMap { Remedy(rawValue: String($0)) })
             }

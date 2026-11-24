@@ -388,17 +388,20 @@ final class SessionManager: ObservableObject {
     }
 
     private func maybeNudge(now: Date) {
-        guard settings.nudgeEnabled, let start = episodeStart, let session = current else { return }
+        let soundOn = settings.nudgeSoundRaw != NudgeSound.none.rawValue
+        guard settings.nudgeEnabled || soundOn, let start = episodeStart, let session = current else { return }
         guard now.timeIntervalSince(start) >= settings.nudgeAfterSeconds else { return }
         guard now.timeIntervalSince(lastNudge) >= settings.nudgeCooldownMinutes * 60 else { return }
         // Waarom niet? Eén keer per episode noteren.
         func skip(_ reason: String) {
             if !episodeSkipLogged { DiagLog.shared.log("tikje", "niet gevraagd: \(reason)"); episodeSkipLogged = true }
         }
-        guard hub.hasHaptics else { return skip("geen watch actief") }
+        let watchOn = settings.nudgeEnabled && hub.hasHaptics
+        guard watchOn || soundOn else { return skip("geen watch actief en geen geluid gekozen") }
         guard now.timeIntervalSince(session.start) > Double(settings.nudgeQuietFirstMinutes * 60) else { return skip("eerste \(settings.nudgeQuietFirstMinutes) min") }
         if settings.nudgeOnlyOnBack, currentPosition != .back, currentPosition != .unknown { return skip("houding \(currentPosition.label)") }
-        hub.nudge(settings.nudgeIntensity)
+        if watchOn { hub.nudge(settings.nudgeIntensity) }
+        if soundOn { NudgeSoundPlayer.shared.play(); DiagLog.shared.log("tikje", "geluid gespeeld") }
         DiagLog.shared.nudgeRequested("houding \(currentPosition.label), snurkt \(Int(now.timeIntervalSince(start))) s")
         lastNudge = now
     }
@@ -445,7 +448,10 @@ final class SessionManager: ObservableObject {
             nudgeDelivered()
         case .vital(let kind, let v, let at):
             session.vitals.append(VitalSample(at: at, kind: kind, value: v))
-            if kind == .movement { AlarmService.shared.signal(movement: v, at: at) }
+            if kind == .movement {
+                AlarmService.shared.signal(movement: v, at: at)
+                SleepSoundController.shared.noteMovement(v)
+            }
         default: break
         }
     }

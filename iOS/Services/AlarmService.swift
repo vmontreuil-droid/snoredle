@@ -221,6 +221,23 @@ final class AlarmService: ObservableObject {
         return "Via meldingen (iOS ouder dan 26)"
     }
 
+    /// Test van het slim-wekken-pad: zoals 's nachts bij beweging in het venster.
+    func testSmartWake() async -> String {
+        DiagLog.shared.log("slim", "TEST slim wekken")
+        if settings.alarmVibrateWatch { startWatchNudges() }
+        #if canImport(AlarmKit)
+        if #available(iOS 26.0, *) {
+            guard await AlarmKitBackend.authorize() else { return "Geen toestemming voor wekkers." }
+            do {
+                _ = try await AlarmKitBackend.scheduleOnce(at: .now.addingTimeInterval(15), title: "Slim gewekt (test)", id: UUID())
+                return "Over 15 seconden: wekker met geluid, en je watch trilt nu al."
+            } catch { return "Mislukt: \(error.localizedDescription)" }
+        }
+        #endif
+        scheduleFallbackTone(at: .now.addingTimeInterval(15))
+        return "Over 15 seconden gaat de alarmtoon (laat Snoredle open staan)."
+    }
+
     /// Testwekker binnen een minuut, om geluid en toestemming te controleren.
     func testAlarm() async -> String {
         #if canImport(AlarmKit)

@@ -38,7 +38,11 @@ struct AlarmCard: View {
         let on = alarms.alarms.filter(\.enabled).count
         if alarms.alarms.isEmpty { return "Tik om een wekker te zetten" }
         if on == 0 { return "Alle wekkers staan uit" }
-        if let (item, _) = alarms.nextItem, item.smart { return "\(on) actief · slim: tot \(item.smartWindow) min vroeger" }
+        if let (_, date) = alarms.nextItem {
+            let goal = AppSettings.shared.sleepGoalHours
+            let bed = date.addingTimeInterval(-(goal * 3600) - 15 * 60)
+            return "Ga slapen rond \(bed.formatted(date: .omitted, time: .shortened)) voor \(String(format: "%.1f", goal)) u slaap"
+        }
         return "\(on) actief"
     }
 
@@ -75,6 +79,9 @@ struct AlarmsView: View {
                     Button {
                         Task { testMessage = await service.testAlarm() }
                     } label: { Label("Test wekker (over 1 minuut)", systemImage: "alarm.waves.left.and.right") }
+                    Button {
+                        Task { testMessage = await service.testSmartWake() }
+                    } label: { Label("Test slimme wekker (15 s)", systemImage: "sparkles") }
                     if let testMessage { Text(testMessage).font(.footnote).foregroundStyle(.secondary) }
                 }
                 .listRowBackground(Color.white.opacity(0.05))
