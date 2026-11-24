@@ -29,6 +29,7 @@ final class SleepSession {
     @Relationship(deleteRule: .cascade, inverse: \VitalSample.session) var vitals: [VitalSample] = []
     @Relationship(deleteRule: .cascade, inverse: \NightSoundEvent.session) var nightSounds: [NightSoundEvent] = []
     @Relationship(deleteRule: .cascade, inverse: \SleepStageSample.session) var stages: [SleepStageSample] = []
+    @Relationship(deleteRule: .cascade, inverse: \OutOfBedEvent.session) var outOfBed: [OutOfBedEvent] = []
     var alarmNote: String?
     var pausesRaw: [Double] = []            // paren (start, einde) als timeIntervalSince1970
 
@@ -328,4 +329,18 @@ final class SleepStageSample {
     var session: SleepSession?
     init(start: Date, end: Date, stage: SleepStage) { self.start = start; self.end = end; self.stageRaw = stage.rawValue }
     var stage: SleepStage { SleepStage(rawValue: stageRaw) ?? .asleep }
+}
+
+/// Je stond op tijdens de nacht (toilet, slaapwandelen…).
+@Model
+final class OutOfBedEvent {
+    var start: Date
+    var end: Date
+    var steps: Int
+    var alerted: Bool = false               // slaapwandelalarm gegeven
+    var session: SleepSession?
+    init(start: Date, end: Date, steps: Int, alerted: Bool) {
+        self.start = start; self.end = end; self.steps = steps; self.alerted = alerted
+    }
+    var duration: TimeInterval { end.timeIntervalSince(start) }
 }

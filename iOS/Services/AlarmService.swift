@@ -221,6 +221,23 @@ final class AlarmService: ObservableObject {
         return "Via meldingen (iOS ouder dan 26)"
     }
 
+    /// Alarmen die de meting niet mogen stoppen als je ze uitzet (slaapwandelen).
+    private var nonStoppingIDs = Set<UUID>()
+
+    /// Slaapwandelalarm: luid (wekker, ook in stille modus) of een stem, en de watch trilt.
+    func sleepwalkAlert(loud: Bool) async {
+        startWatchNudges()
+        #if canImport(AlarmKit)
+        if loud, #available(iOS 26.0, *), await AlarmKitBackend.authorize() {
+            let id = UUID()
+            nonStoppingIDs.insert(id)
+            _ = try? await AlarmKitBackend.scheduleOnce(at: .now.addingTimeInterval(1), title: "Je bent opgestaan", id: id)
+            return
+        }
+        #endif
+        NudgeSoundPlayer.shared.speak("Je bent opgestaan. Ga rustig terug naar bed.", volume: 1)
+    }
+
     /// Test van het slim-wekken-pad: zoals 's nachts bij beweging in het venster.
     func testSmartWake() async -> String {
         DiagLog.shared.log("slim", "TEST slim wekken")
@@ -342,7 +359,9 @@ final class AlarmService: ObservableObject {
                 if !started.isEmpty, self.sessionActive, self.settings.alarmVibrateWatch { self.startWatchNudges() }
                 if !stopped.isEmpty {
                     self.nudgeTask?.cancel()
-                    if self.sessionActive { self.onDismissed?() }
+                    let realAlarms = stopped.subtracting(self.nonStoppingIDs)
+                    self.nonStoppingIDs.subtract(stopped)
+                    if self.sessionActive, !realAlarms.isEmpty { self.onDismissed?() }
                 }
             }
         }

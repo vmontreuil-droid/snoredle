@@ -71,6 +71,8 @@ final class AppleWatchProvider: NSObject, WearableProvider, WCSessionDelegate {
         guard let msg = try? WatchMessage.decode(messageData) else { replyHandler(Data()); return }
         if case .heartbeat(let hb) = msg {
             DiagLog.shared.heartbeat(position: hb.sample.position.label, movement: hb.movement)
+            if let n = hb.steps, n > 0 { subject.send(.steps(n, hb.sample.at)) }
+            subject.send(.upright(hb.sample.position == .upright, hb.sample.at))
             // Houding alleen doorgeven bij verandering of elke 5 min.
             if hb.sample.position != lastPositionSent || Date().timeIntervalSince(lastPositionAt) > 300 {
                 lastPositionSent = hb.sample.position; lastPositionAt = .now

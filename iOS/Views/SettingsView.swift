@@ -89,6 +89,20 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Toggle("Uit bed bijhouden (toilet…)", isOn: $s.trackOutOfBed)
+                    Toggle("Slaapwandelmodus", isOn: $s.sleepwalkMode)
+                    if s.sleepwalkMode {
+                        Toggle("Luid alarm (ook in stille modus)", isOn: $s.sleepwalkLoudAlarm)
+                        Stepper("Na \(Int(s.sleepwalkAfterSeconds)) s rechtop of stappen", value: $s.sleepwalkAfterSeconds, in: 5...120, step: 5)
+                        Button("Test slaapwandelalarm") {
+                            Task { await AlarmService.shared.sleepwalkAlert(loud: s.sleepwalkLoudAlarm) }
+                        }
+                    }
+                } header: { Text("Uit bed en slaapwandelen") } footer: {
+                    Text("Met je watch om ziet Snoredle wanneer je opstaat en hoe lang je uit bed bent. In slaapwandelmodus gaat er een alarm af en trilt je watch als je opstaat (niet in het eerste halfuur). Een tweede persoon wekken kan nog niet.")
+                }
+
+                Section {
                     Toggle("Andere geluiden herkennen", isOn: $s.detectNightSounds)
                     if s.detectNightSounds {
                         Toggle("Opnemen (praten, lachen, hoesten…)", isOn: $s.saveTalkClips)
@@ -188,7 +202,7 @@ struct CalibrationView: View {
             if let p = position {
                 Text("Houding \(step + 1) van \(SleepPosition.calibratable.count)").font(.footnote).foregroundStyle(.secondary)
                 Image(systemName: p.symbol).font(.system(size: 56)).foregroundStyle(Theme.accent)
-                Text("Ga op je \(p.label.lowercased()) liggen zoals je slaapt, met je watch om.")
+                Text("Ga \(p.instruction) liggen, zoals je slaapt, met je watch om.")
                     .multilineTextAlignment(.center)
                 if !hub.watchReachable {
                     Label("Doe je watch om en open Snoredle erop. Dan kan je beginnen.", systemImage: "applewatch.slash")

@@ -22,6 +22,14 @@ final class NudgeSoundPlayer {
     private let synth = SoundSynth()
     private let speech = AVSpeechSynthesizer()
 
+    func speak(_ text: String, volume: Float) {
+        let u = AVSpeechUtterance(string: text)
+        u.voice = AVSpeechSynthesisVoice(language: "nl-BE") ?? AVSpeechSynthesisVoice(language: "nl-NL")
+        u.volume = volume
+        u.rate = 0.47
+        speech.speak(u)
+    }
+
     func play(_ sound: NudgeSound? = nil, volume: Double? = nil) {
         let s = sound ?? NudgeSound(rawValue: AppSettings.shared.nudgeSoundRaw) ?? .none
         let vol = Float(volume ?? AppSettings.shared.nudgeSoundVolume)

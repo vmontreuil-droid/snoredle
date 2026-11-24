@@ -38,6 +38,7 @@ struct SessionDetailView: View {
                     .padding(.top, 4)
                 }
                 if !session.stages.isEmpty { card("Slaapfasen") { stagesChart } }
+                if !session.outOfBed.isEmpty { card("Uit bed (\(session.outOfBed.count)×)") { outOfBedList } }
                 if !session.nightSounds.isEmpty { card("Andere geluiden (\(session.nightSounds.count))") { nightSoundsList } }
                 if !session.positions.isEmpty { card("Slaaphouding") { positionSection } }
                 if !session.vitals.isEmpty { card("Lichaam") { vitalsSection } }
@@ -188,6 +189,30 @@ struct SessionDetailView: View {
                     Text("\(Int(s.minutes)) min").foregroundStyle(.secondary)
                     Text("snurkt \(Int(s.snoreShare * 100))%").frame(width: 100, alignment: .trailing)
                 }.font(.subheadline)
+            }
+        }
+    }
+
+    // MARK: Uit bed
+
+    private var outOfBedList: some View {
+        let list = session.outOfBed.sorted { $0.start < $1.start }
+        let total = list.map(\.duration).reduce(0, +)
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("Samen \(Int((total / 60).rounded())) min uit bed").font(.subheadline).foregroundStyle(.secondary)
+            ForEach(list) { o in
+                HStack {
+                    Image(systemName: o.alerted ? "figure.walk.motion" : "figure.walk").foregroundStyle(o.alerted ? .orange : Theme.accent)
+                        .frame(width: 24)
+                    Text(o.start.formatted(date: .omitted, time: .shortened)).font(.subheadline.weight(.semibold)).monospacedDigit()
+                    Text("\(max(1, Int((o.duration / 60).rounded()))) min · \(o.steps) stappen\(o.alerted ? " · alarm" : "")")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                }
+            }
+            if list.count >= 2 {
+                Text("Vaak 's nachts naar het toilet (nycturie) kan verschillende oorzaken hebben. Gebeurt het elke nacht 2× of meer, bespreek het dan met je huisarts.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
     }

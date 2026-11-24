@@ -23,6 +23,9 @@ final class NightTracker: NSObject, ObservableObject {
     @Published private(set) var pausedUntil: Date?
 
     private let motion = CMMotionManager()
+    private let pedometer = CMPedometer()
+    private var stepTotal = 0
+    private var stepsReported = 0
     private let health = HKHealthStore()
     private var workout: HKWorkoutSession?
     private var builder: HKLiveWorkoutBuilder?
@@ -47,6 +50,13 @@ final class NightTracker: NSObject, ObservableObject {
         trackingSince = .now
         startWorkout()
         startMotion()
+        stepTotal = 0; stepsReported = 0
+        if CMPedometer.isStepCountingAvailable() {
+            pedometer.startUpdates(from: .now) { [weak self] data, _ in
+                guard let n = data?.numberOfSteps.intValue else { return }
+                Task { @MainActor in self?.stepTotal = n }
+            }
+        }
         sampleTimer = Timer.scheduledTimer(withTimeInterval: settings.sampleIntervalSeconds, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.emitSample() }
         }
@@ -58,6 +68,7 @@ final class NightTracker: NSObject, ObservableObject {
         isTracking = false
         sampleTimer?.invalidate(); sampleTimer = nil
         motion.stopDeviceMotionUpdates()
+        pedometer.stopUpdates()
         workout?.end()
         // Workout niet bewaren: het is geen training en mag je activiteitsringen niet beïnvloeden.
         let b = builder
@@ -126,7 +137,9 @@ final class NightTracker: NSObject, ObservableObject {
         let movement = recent.isEmpty ? 0 : recent.reduce(0, +) / Double(recent.count) * 10
         accelBuffer.removeAll(keepingCapacity: true)
         let sample = PositionSamplePayload(position: pos, confidence: conf, gravity: g, at: .now)
-        sendHeartbeat(Heartbeat(sample: sample, movement: movement, heartRate: heartRate))
+        let newSteps = max(0, stepTotal - stepsReported)
+        stepsReported = stepTotal
+        sendHeartbeat(Heartbeat(sample: sample, movement: movement, heartRate: heartRate, steps: newSteps))
     }
 
     /// Seintje naar de iPhone; het antwoord kan een tikje bevatten. De watch→iPhone-richting werkt
@@ -218,7 +231,7 @@ final class NightTracker: NSObject, ObservableObject {
             }
             for p in SleepPosition.calibratable {
                 guidedStep = p
-                say("Lig nu op je \(p.label.lowercased())")
+                say("Lig nu \(p.instruction)")
                 for _ in 0..<2 { WKInterfaceDevice.current().play(.notification); try? await Task.sleep(for: .milliseconds(600)) }
                 for i in stride(from: 10, to: 0, by: -1) {
                     guidedCountdown = i

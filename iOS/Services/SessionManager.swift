@@ -55,6 +55,14 @@ final class SessionManager: ObservableObject {
 
     private var currentPosition: SleepPosition = .unknown
 
+    // Uit bed (toilet / slaapwandelen)
+    private var recentSteps: [(Date, Int)] = []
+    private var uprightNow = false
+    private var outStart: Date?
+    private var outLastActive = Date.distantPast
+    private var outSteps = 0
+    private var outAlerted = false
+
     // Andere nachtgeluiden
     private struct SoundTrack { var start: Date; var last: Date; var conf: [Double]; var clip: String? }
     private var soundTracks: [NightSoundKind: SoundTrack] = [:]
@@ -168,6 +176,7 @@ final class SessionManager: ObservableObject {
         current = session
         resetEpisode(); clipsThisNight = 0; eventCount = 0
         soundTracks = [:]; nightSoundCount = 0
+        recentSteps = []; uprightNow = false; outStart = nil; outSteps = 0; outAlerted = false
         // Minuut-teller opnieuw starten, anders krijgt het eerste meetpunt een oud tijdstip.
         minuteDb = []; minuteSnore = []; minuteStart = .now
         recentDb = []; noiseFloor = 30
@@ -211,6 +220,7 @@ final class SessionManager: ObservableObject {
         delayTask?.cancel()
         closeEpisode(at: .now)
         for kind in Array(soundTracks.keys) { closeSound(kind) }
+        closeOutOfBed(force: true)
         flushMinute()
         detector.stop()
         AlarmService.shared.disarm()
@@ -431,6 +441,46 @@ final class SessionManager: ObservableObject {
         if session.loudness.count % 15 == 0 { try? context?.save() }   // tussentijds bewaren
     }
 
+    // MARK: Uit bed
+
+    private func evaluateOutOfBed(at now: Date) {
+        guard settings.trackOutOfBed, state == .recording, !isPaused, let session = current else { return }
+        recentSteps.removeAll { now.timeIntervalSince($0.0) > 30 }
+        let steps30 = recentSteps.map(\.1).reduce(0, +)
+        let isUp = (uprightNow && steps30 >= 2) || steps30 >= 6
+
+        if isUp {
+            if outStart == nil {
+                outStart = now; outSteps = 0; outAlerted = false
+                DiagLog.shared.log("uitbed", "opgestaan (\(steps30) stappen, rechtop: \(uprightNow))")
+            }
+            outLastActive = now
+            outSteps += recentSteps.last.map { $0.0 == now ? $0.1 : 0 } ?? 0
+            // Slaapwandelmodus: na x seconden op, niet in het eerste halfuur.
+            if settings.sleepwalkMode, !outAlerted, let s = outStart,
+               now.timeIntervalSince(s) >= settings.sleepwalkAfterSeconds,
+               now.timeIntervalSince(session.start) > 30 * 60 {
+                outAlerted = true
+                DiagLog.shared.log("uitbed", "SLAAPWANDELALARM")
+                Task { await AlarmService.shared.sleepwalkAlert(loud: settings.sleepwalkLoudAlarm) }
+            }
+        } else {
+            closeOutOfBed(force: false, now: now)
+        }
+    }
+
+    /// Terug in bed: 90 s geen stappen en niet meer rechtop.
+    private func closeOutOfBed(force: Bool, now: Date = .now) {
+        guard let s = outStart, let session = current else { return }
+        guard force || (now.timeIntervalSince(outLastActive) > 90 && !uprightNow) else { return }
+        let end = outLastActive
+        if end.timeIntervalSince(s) >= 30 || outSteps >= 10 || outAlerted {
+            session.outOfBed.append(OutOfBedEvent(start: s, end: max(end, s.addingTimeInterval(30)), steps: outSteps, alerted: outAlerted))
+            DiagLog.shared.log("uitbed", "terug in bed na \(Int(end.timeIntervalSince(s))) s, \(outSteps) stappen")
+        }
+        outStart = nil; outSteps = 0
+    }
+
     // MARK: Wearables
 
     private func handleWearable(_ e: WearableEvent, source: String) {
@@ -446,6 +496,12 @@ final class SessionManager: ObservableObject {
                                                     confidence: p.confidence, source: source))
         case .nudgeDelivered:
             nudgeDelivered()
+        case .steps(let n, let at):
+            recentSteps.append((at, n))
+            evaluateOutOfBed(at: at)
+        case .upright(let up, let at):
+            uprightNow = up
+            evaluateOutOfBed(at: at)
         case .vital(let kind, let v, let at):
             session.vitals.append(VitalSample(at: at, kind: kind, value: v))
             if kind == .movement {

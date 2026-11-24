@@ -32,8 +32,9 @@ public struct Heartbeat: Codable, Sendable, Hashable {
     public var sample: PositionSamplePayload
     public var movement: Double
     public var heartRate: Double?
-    public init(sample: PositionSamplePayload, movement: Double, heartRate: Double?) {
-        self.sample = sample; self.movement = movement; self.heartRate = heartRate
+    public var steps: Int?                 // stappen sinds het vorige seintje
+    public init(sample: PositionSamplePayload, movement: Double, heartRate: Double?, steps: Int? = nil) {
+        self.sample = sample; self.movement = movement; self.heartRate = heartRate; self.steps = steps
     }
 }
 
@@ -85,7 +86,13 @@ public struct WatchStatus: Codable, Sendable, Hashable {
 public struct CalibrationProfile: Codable, Sendable, Hashable {
     public var vectors: [SleepPosition: Vector3]
     public init(vectors: [SleepPosition: Vector3] = [:]) { self.vectors = vectors }
-    public var isComplete: Bool { SleepPosition.calibratable.allSatisfy { vectors[$0] != nil } }
+    /// Volledig: rug, links, rechts en buik (oude kalibratie) of beide nieuwe buikhoudingen.
+    public var isComplete: Bool {
+        [SleepPosition.back, .left, .right].allSatisfy { vectors[$0] != nil }
+            && (vectors[.stomach] != nil || (vectors[.stomachLeft] != nil && vectors[.stomachRight] != nil))
+    }
+    /// Oude kalibratie zonder de twee buikhoudingen met kant.
+    public var missesStomachSides: Bool { vectors[.stomachLeft] == nil || vectors[.stomachRight] == nil }
 
     /// Standaardprofiel (pols, wijzerplaat naar boven bij rugligging) als er nog niet gekalibreerd is.
     public static let `default` = CalibrationProfile(vectors: [

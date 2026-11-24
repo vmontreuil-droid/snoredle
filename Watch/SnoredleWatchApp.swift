@@ -67,7 +67,7 @@ struct WatchHomeView: View {
         ScrollView {
             VStack(spacing: 8) {
                 if let g = t.guidedStep {
-                    Text("Lig op je \(g.label.lowercased())").font(.headline).multilineTextAlignment(.center)
+                    Text("Lig \(g.instruction)").font(.headline).multilineTextAlignment(.center)
                     Image(systemName: g.symbol).font(.largeTitle).foregroundStyle(.orange)
                     Text("\(t.guidedCountdown)").font(.title.bold()).monospacedDigit()
                     Text(t.guidedCountdown > 5 ? "Stil gaan liggen…" : "Meten…").font(.footnote).foregroundStyle(.secondary)

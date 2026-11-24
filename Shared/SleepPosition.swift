@@ -5,7 +5,9 @@ public enum SleepPosition: String, Codable, CaseIterable, Identifiable, Sendable
     case back      // rug
     case left      // linkerzij
     case right     // rechterzij
-    case stomach   // buik
+    case stomach   // buik (oude kalibratie, zonder kant)
+    case stomachLeft   // buik, linkerwang op het kussen
+    case stomachRight  // buik, rechterwang op het kussen
     case upright   // rechtop / wakker
     case unknown
 
@@ -17,6 +19,8 @@ public enum SleepPosition: String, Codable, CaseIterable, Identifiable, Sendable
         case .left: return "Linkerzij"
         case .right: return "Rechterzij"
         case .stomach: return "Buik"
+        case .stomachLeft: return "Buik (linkerwang)"
+        case .stomachRight: return "Buik (rechterwang)"
         case .upright: return "Rechtop"
         case .unknown: return "Onbekend"
         }
@@ -28,13 +32,31 @@ public enum SleepPosition: String, Codable, CaseIterable, Identifiable, Sendable
         case .left: return "arrow.turn.up.left"
         case .right: return "arrow.turn.up.right"
         case .stomach: return "bed.double"
+        case .stomachLeft: return "arrow.down.left"
+        case .stomachRight: return "arrow.down.right"
         case .upright: return "figure.stand"
         case .unknown: return "questionmark"
         }
     }
 
-    /// Posities die je kalibreert bij de eerste nacht.
-    public static let calibratable: [SleepPosition] = [.back, .left, .right, .stomach]
+    /// Hoe je moet gaan liggen (voor kalibratie, ook gesproken).
+    public var instruction: String {
+        switch self {
+        case .back: return "op je rug"
+        case .left: return "op je linkerzij"
+        case .right: return "op je rechterzij"
+        case .stomach: return "op je buik"
+        case .stomachLeft: return "op je buik, met je linkerwang op het kussen"
+        case .stomachRight: return "op je buik, met je rechterwang op het kussen"
+        case .upright: return "rechtop"
+        case .unknown: return ""
+        }
+    }
+
+    public var isStomach: Bool { self == .stomach || self == .stomachLeft || self == .stomachRight }
+
+    /// Posities die je kalibreert.
+    public static let calibratable: [SleepPosition] = [.back, .left, .right, .stomachLeft, .stomachRight]
 }
 
 /// Eenvoudige 3D-vector (zwaartekracht) die op beide platformen bestaat.

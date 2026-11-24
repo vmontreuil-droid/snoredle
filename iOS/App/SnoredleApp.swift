@@ -7,7 +7,7 @@ enum AppData {
     static let container: ModelContainer = {
         let schema = Schema([SleepSession.self, SnoreEvent.self, LoudnessSample.self,
                              PositionSample.self, VitalSample.self,
-                             NightSoundEvent.self, SleepStageSample.self])
+                             NightSoundEvent.self, SleepStageSample.self, OutOfBedEvent.self])
         return try! ModelContainer(for: schema)
     }()
 }
@@ -75,6 +75,8 @@ enum Theme {
         case .left: Color(red: 0.30, green: 0.85, blue: 0.45)     // groen
         case .right: Color(red: 0.32, green: 0.55, blue: 1.00)    // blauw
         case .stomach: Color(red: 0.75, green: 0.40, blue: 0.95)  // paars
+        case .stomachLeft: Color(red: 0.75, green: 0.40, blue: 0.95)   // paars
+        case .stomachRight: Color(red: 1.00, green: 0.82, blue: 0.25)  // geel
         case .upright: .gray
         case .unknown: .secondary
         }

@@ -17,6 +17,7 @@ enum BackupService {
         var id: UUID; var start: Date; var end: Date?; var note: String; var rating: Int?
         var factors: [String]; var remedies: [String]; var pauses: [Double]
         var events: [E]; var loudness: [L]; var positions: [P]; var vitals: [V]; var sounds: [N]; var stages: [T]
+        var outOfBed: [O]? = nil
     }
     struct E: Codable { var start: Date; var end: Date; var intensity: Int; var peak: Double; var conf: Double; var pos: String; var nudged: Bool; var partner: Bool }
     struct L: Codable { var at: Date; var db: Double; var p: Double }
@@ -24,6 +25,7 @@ enum BackupService {
     struct V: Codable { var at: Date; var kind: String; var value: Double }
     struct N: Codable { var start: Date; var end: Date; var kind: String; var conf: Double; var transcript: String? }
     struct T: Codable { var start: Date; var end: Date; var stage: Int }
+    struct O: Codable { var start: Date; var end: Date; var steps: Int; var alerted: Bool }
 
     static func export(context: ModelContext) throws -> URL {
         let all = try context.fetch(FetchDescriptor<SleepSession>(sortBy: [SortDescriptor(\.start)]))
@@ -36,7 +38,8 @@ enum BackupService {
               positions: s.positions.map { P(at: $0.at, pos: $0.positionRaw, conf: $0.confidence, src: $0.source) },
               vitals: s.vitals.map { V(at: $0.at, kind: $0.kindRaw, value: $0.value) },
               sounds: s.nightSounds.map { N(start: $0.start, end: $0.end, kind: $0.kindRaw, conf: $0.confidence, transcript: $0.transcript) },
-              stages: s.stages.map { T(start: $0.start, end: $0.end, stage: $0.stageRaw) })
+              stages: s.stages.map { T(start: $0.start, end: $0.end, stage: $0.stageRaw) },
+              outOfBed: s.outOfBed.map { O(start: $0.start, end: $0.end, steps: $0.steps, alerted: $0.alerted) })
         })
         let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
         let name = "Snoredle-backup-\(Date().formatted(.iso8601.year().month().day())).json"
@@ -76,6 +79,7 @@ enum BackupService {
                 return n
             }
             s.stages = x.stages.map { SleepStageSample(start: $0.start, end: $0.end, stage: SleepStage(rawValue: $0.stage) ?? .asleep) }
+            s.outOfBed = (x.outOfBed ?? []).map { OutOfBedEvent(start: $0.start, end: $0.end, steps: $0.steps, alerted: $0.alerted) }
             SnoreAnalysis.summarize(s)
             n += 1
         }

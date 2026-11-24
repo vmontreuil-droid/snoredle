@@ -427,6 +427,7 @@ struct WatchStatusPill: View {
     private func subtitle(connected: Bool, needsCalibration: Bool) -> String {
         if !connected { return hub.watchHint.map { "\($0) · nu alleen geluid" } ?? "Alleen geluid wordt gemeten" }
         if needsCalibration { return "Tik om je slaaphoudingen te kalibreren" }
+        if hub.profile.missesStomachSides { return "Nieuw: 2 buikhoudingen — kalibreer opnieuw (Instellingen)" }
         return "Houding, hartslag en tikjes actief"
     }
 }

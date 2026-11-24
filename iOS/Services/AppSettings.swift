@@ -48,6 +48,12 @@ final class AppSettings: ObservableObject {
     @AppStorage("detectNightSounds") var detectNightSounds: Bool = true
     @AppStorage("saveTalkClips") var saveTalkClips: Bool = true
 
+    // Uit bed / slaapwandelen
+    @AppStorage("trackOutOfBed") var trackOutOfBed: Bool = true
+    @AppStorage("sleepwalkMode") var sleepwalkMode: Bool = false
+    @AppStorage("sleepwalkLoudAlarm") var sleepwalkLoudAlarm: Bool = true    // wekker-alarm (ook in stille modus)
+    @AppStorage("sleepwalkAfterSeconds") var sleepwalkAfterSeconds: Double = 15
+
     // Algemeen
     @AppStorage("didOnboard") var didOnboard: Bool = false
     @AppStorage("bedtimeReminder") var bedtimeReminder: Bool = false
