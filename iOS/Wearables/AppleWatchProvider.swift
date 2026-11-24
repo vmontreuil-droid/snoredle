@@ -40,12 +40,16 @@ final class AppleWatchProvider: NSObject, WearableProvider, WCSessionDelegate {
     func nudge(_ intensity: NudgeIntensity) {
         lock.lock(); pendingNudge = (intensity, Date()); lock.unlock()
         guard let s = session, s.activationState == .activated, s.isReachable,
-              let data = try? WatchMessage.nudge(intensity: intensity).encoded() else { return }
+              let data = try? WatchMessage.nudge(intensity: intensity).encoded() else {
+            DiagLog.shared.log("tikje", "watch niet rechtstreeks bereikbaar → wacht op volgend seintje")
+            return
+        }
         // Rechtstreeks proberen; lukt het niet, dan blijft het klaarstaan voor het volgende seintje.
         lock.lock(); pendingNudge = nil; lock.unlock()
         s.sendMessageData(data, replyHandler: { [weak self] _ in
             self?.subject.send(.nudgeDelivered(.now))
-        }, errorHandler: { [weak self] _ in
+        }, errorHandler: { [weak self] err in
+            DiagLog.shared.log("tikje", "rechtstreeks mislukt: \(err.localizedDescription) → wacht op seintje")
             guard let self else { return }
             self.lock.lock(); if self.pendingNudge == nil { self.pendingNudge = (intensity, Date()) }; self.lock.unlock()
         })
@@ -66,6 +70,7 @@ final class AppleWatchProvider: NSObject, WearableProvider, WCSessionDelegate {
     func session(_ session: WCSession, didReceiveMessageData messageData: Data, replyHandler: @escaping (Data) -> Void) {
         guard let msg = try? WatchMessage.decode(messageData) else { replyHandler(Data()); return }
         if case .heartbeat(let hb) = msg {
+            DiagLog.shared.heartbeat(position: hb.sample.position.label, movement: hb.movement)
             // Houding alleen doorgeven bij verandering of elke 5 min.
             if hb.sample.position != lastPositionSent || Date().timeIntervalSince(lastPositionAt) > 300 {
                 lastPositionSent = hb.sample.position; lastPositionAt = .now
@@ -73,6 +78,7 @@ final class AppleWatchProvider: NSObject, WearableProvider, WCSessionDelegate {
             }
             if hb.movement > 0.3 { subject.send(.vital(.movement, hb.movement, hb.sample.at)) }
             if let i = takePendingNudge(), let d = try? WatchMessage.nudge(intensity: i).encoded() {
+                DiagLog.shared.log("tikje", "meegegeven in antwoord op seintje")
                 replyHandler(d)
             } else {
                 replyHandler(Data())
@@ -162,10 +168,14 @@ final class AppleWatchProvider: NSObject, WearableProvider, WCSessionDelegate {
         if let batch = userInfo["batch"] as? [Data] { batch.forEach(handle) }
     }
     func session(_ session: WCSession, activationDidCompleteWith state: WCSessionActivationState, error: Error?) {
+        DiagLog.shared.log("watch", "verbinding geactiveerd: status \(state.rawValue), gekoppeld \(session.isPaired), app op watch \(session.isWatchAppInstalled)\(error.map { ", fout: \($0.localizedDescription)" } ?? "")")
         subject.send(.availabilityChanged)
     }
     func sessionWatchStateDidChange(_ session: WCSession) { subject.send(.availabilityChanged) }
-    func sessionReachabilityDidChange(_ session: WCSession) { subject.send(.availabilityChanged) }
+    func sessionReachabilityDidChange(_ session: WCSession) {
+        DiagLog.shared.log("watch", "bereikbaar: \(session.isReachable)")
+        subject.send(.availabilityChanged)
+    }
 
     var isReachable: Bool { session?.isReachable ?? false }
 

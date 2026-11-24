@@ -67,6 +67,7 @@ final class AlarmService: ObservableObject {
     private var updatesTask: Task<Void, Never>?
     private var alerting = Set<UUID>()
     private var smartFired = false
+    private var lastSignalLog = Date.distantPast
     private var sessionActive = false
     private let tone = SoundSynth()
     private static let storeKey = "alarms.v2"
@@ -155,7 +156,11 @@ final class AlarmService: ObservableObject {
     private func performSync() async {
         #if canImport(AlarmKit)
         if #available(iOS 26.0, *) {
-            guard await AlarmKitBackend.authorize() else { permissionDenied = true; return }
+            guard await AlarmKitBackend.authorize() else {
+                permissionDenied = true
+                DiagLog.shared.log("wekker", "GEEN toestemming voor wekkers (AlarmKit)")
+                return
+            }
             permissionDenied = false
             AlarmKitBackend.cancelAll()
             var skips = Self.loadSkips()
@@ -168,9 +173,12 @@ final class AlarmService: ObservableObject {
                         _ = try? await AlarmKitBackend.scheduleOnce(at: next, title: a.label, id: a.id)
                     }
                 } else {
-                    try? await AlarmKitBackend.scheduleRepeating(a)
+                    do { try await AlarmKitBackend.scheduleRepeating(a) }
+                    catch { DiagLog.shared.log("wekker", "plannen \(a.timeText) mislukt: \(error.localizedDescription)") }
                 }
             }
+            let planned = (try? AlarmManager.shared.alarms.count) ?? -1
+            DiagLog.shared.log("wekker", "gesynchroniseerd: \(alarms.filter(\.enabled).count) actief, \(planned) bij iOS gepland, overslagen: \(skips.count)")
             return
         }
         #endif
@@ -224,8 +232,13 @@ final class AlarmService: ObservableObject {
         guard sessionActive, !smartFired, !isRinging, let (item, end) = nextItem, item.smart else { return }
         let start = end.addingTimeInterval(-Double(item.smartWindow * 60))
         guard now >= start, now < end.addingTimeInterval(-30) else { return }
+        if Date().timeIntervalSince(lastSignalLog) > 60 {
+            lastSignalLog = .now
+            DiagLog.shared.log("slim", "in venster, beweging \(String(format: "%.2f", intensity)) (drempel \(String(format: "%.2f", settings.smartWakeMovementThreshold)))")
+        }
         guard intensity >= settings.smartWakeMovementThreshold else { return }
         smartFired = true
+        DiagLog.shared.log("slim", "WEKKEN NU (gepland \(item.timeText))")
         lastWakeReason = "Gewekt om \(now.formatted(date: .omitted, time: .shortened)) tijdens lichte slaap (gepland \(item.timeText))"
         Task { await wakeNow(skipping: item) }
     }
@@ -270,6 +283,8 @@ final class AlarmService: ObservableObject {
                 let started = nowAlerting.subtracting(self.alerting)
                 let stopped = self.alerting.subtracting(nowAlerting)
                 self.alerting = nowAlerting
+                if !started.isEmpty { DiagLog.shared.log("wekker", "GAAT AF (meting loopt: \(self.sessionActive))") }
+                if !stopped.isEmpty { DiagLog.shared.log("wekker", "uitgezet") }
                 if !started.isEmpty, self.sessionActive, self.settings.alarmVibrateWatch { self.startWatchNudges() }
                 if !stopped.isEmpty {
                     self.nudgeTask?.cancel()

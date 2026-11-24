@@ -144,6 +144,7 @@ struct SettingsView: View {
                 BackupSection()
 
                 Section("Over") {
+                    NavigationLink { DiagnoseView() } label: { Label("Diagnose en versie", systemImage: "stethoscope") }
                     Text("Snoredle is geen medisch hulpmiddel. Alle audio blijft op je toestel.").font(.footnote)
                     Link("Privacybeleid", destination: URL(string: "https://example.com/privacy")!)
                     Link("Gebruiksvoorwaarden", destination: URL(string: "https://example.com/terms")!)

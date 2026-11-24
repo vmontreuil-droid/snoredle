@@ -37,6 +37,7 @@ final class SessionManager: ObservableObject {
     private var episodeConfidence: [Double] = []
     private var episodeClip: String?
     private var episodeNudged = false
+    private var episodeSkipLogged = false
     private var lastNudge: Date = .distantPast
     private var clipsThisNight = 0
 
@@ -122,6 +123,7 @@ final class SessionManager: ObservableObject {
         for kind in Array(soundTracks.keys) { closeSound(kind) }
         clips.endClip()
         if pauseStart == nil { pauseStart = .now }
+        DiagLog.shared.log("nacht", "pauze \(minutes) min")
         let until = Date().addingTimeInterval(Double(minutes * 60))
         pausedUntil = until
         resumeTask?.cancel()
@@ -176,12 +178,15 @@ final class SessionManager: ObservableObject {
         detector.calibrationOffset = settings.calibrationOffset
         do { try detector.start() } catch {
             lastError = "Microfoon kon niet starten: \(error.localizedDescription)"
+            DiagLog.shared.log("nacht", "microfoon start mislukt: \(error.localizedDescription)")
             hub.stop(id: session.id)
             context.delete(session); current = nil; return
         }
 
         Task { await AlarmService.shared.arm() }
         pausedUntil = nil; pauseStart = nil
+        DiagLog.shared.resetCounters()
+        DiagLog.shared.log("nacht", "START · watch actief: \(hub.active.map(\.name)) · tikjes \(settings.nudgeEnabled ? "aan" : "uit") (alleen rug: \(settings.nudgeOnlyOnBack), na \(Int(settings.nudgeAfterSeconds)) s, eerste \(settings.nudgeQuietFirstMinutes) min niet) · volgende wekker: \(AlarmService.shared.nextItem.map { "\($0.0.timeText) slim=\($0.0.smart)" } ?? "geen")")
         defer { broadcastState() }
         LiveActivityService.shared.start(session: session, alarm: nil)
 
@@ -201,6 +206,7 @@ final class SessionManager: ObservableObject {
     func stop() async {
         guard let session = current else { return }
         if isPaused { resume() }
+        DiagLog.shared.log("nacht", "STOP · \(DiagLog.shared.summary) · episodes \(eventCount)")
         state = .finishing
         delayTask?.cancel()
         closeEpisode(at: .now)
@@ -297,7 +303,7 @@ final class SessionManager: ObservableObject {
         if soundTracks.values.contains(where: { $0.clip != nil }) { clips.endClip()
             for k in soundTracks.keys { soundTracks[k]?.clip = nil } }
         episodeStart = t.addingTimeInterval(-1.5)
-        episodePeak = 0; episodeConfidence = []; episodeNudged = false
+        episodePeak = 0; episodeConfidence = []; episodeNudged = false; episodeSkipLogged = false
         isSnoring = true
         LiveActivityService.shared.update(snoreEvents: eventCount, isSnoring: true,
                                           position: currentPosition, nightSounds: nightSoundCount)
@@ -382,17 +388,24 @@ final class SessionManager: ObservableObject {
     }
 
     private func maybeNudge(now: Date) {
-        guard settings.nudgeEnabled, hub.hasHaptics, let start = episodeStart, let session = current else { return }
-        guard now.timeIntervalSince(session.start) > Double(settings.nudgeQuietFirstMinutes * 60) else { return }
+        guard settings.nudgeEnabled, let start = episodeStart, let session = current else { return }
         guard now.timeIntervalSince(start) >= settings.nudgeAfterSeconds else { return }
         guard now.timeIntervalSince(lastNudge) >= settings.nudgeCooldownMinutes * 60 else { return }
-        if settings.nudgeOnlyOnBack, currentPosition != .back, currentPosition != .unknown { return }
+        // Waarom niet? Eén keer per episode noteren.
+        func skip(_ reason: String) {
+            if !episodeSkipLogged { DiagLog.shared.log("tikje", "niet gevraagd: \(reason)"); episodeSkipLogged = true }
+        }
+        guard hub.hasHaptics else { return skip("geen watch actief") }
+        guard now.timeIntervalSince(session.start) > Double(settings.nudgeQuietFirstMinutes * 60) else { return skip("eerste \(settings.nudgeQuietFirstMinutes) min") }
+        if settings.nudgeOnlyOnBack, currentPosition != .back, currentPosition != .unknown { return skip("houding \(currentPosition.label)") }
         hub.nudge(settings.nudgeIntensity)
+        DiagLog.shared.nudgeRequested("houding \(currentPosition.label), snurkt \(Int(now.timeIntervalSince(start))) s")
         lastNudge = now
     }
 
     /// De watch heeft echt getikt.
     private func nudgeDelivered() {
+        DiagLog.shared.nudgeDelivered()
         if episodeStart != nil { episodeNudged = true }
         else if let last = current?.events.max(by: { $0.start < $1.start }) { last.wasNudged = true }
     }
