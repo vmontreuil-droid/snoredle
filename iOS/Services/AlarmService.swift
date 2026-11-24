@@ -206,6 +206,43 @@ final class AlarmService: ObservableObject {
         }
     }
 
+    /// Toestemming in gewone woorden, voor het wekkerscherm.
+    var permissionText: String {
+        #if canImport(AlarmKit)
+        if #available(iOS 26.0, *) {
+            switch AlarmManager.shared.authorizationState {
+            case .authorized: return "Toegestaan ✓"
+            case .denied: return "Geweigerd: wekkers kunnen niet afgaan"
+            case .notDetermined: return "Nog niet gevraagd"
+            @unknown default: return "Onbekend"
+            }
+        }
+        #endif
+        return "Via meldingen (iOS ouder dan 26)"
+    }
+
+    /// Testwekker binnen een minuut, om geluid en toestemming te controleren.
+    func testAlarm() async -> String {
+        #if canImport(AlarmKit)
+        if #available(iOS 26.0, *) {
+            guard await AlarmKitBackend.authorize() else {
+                DiagLog.shared.log("wekker", "test: geen toestemming")
+                return "Geen toestemming. Zet 'Wekkers' aan in Instellingen › Apps › Snoredle."
+            }
+            do {
+                _ = try await AlarmKitBackend.scheduleOnce(at: .now.addingTimeInterval(60), title: "Test Snoredle", id: UUID())
+                DiagLog.shared.log("wekker", "test gepland over 1 minuut")
+                return "Testwekker gaat over 1 minuut af. Zet je iPhone gerust op stil om het te proberen."
+            } catch {
+                DiagLog.shared.log("wekker", "test mislukt: \(error.localizedDescription)")
+                return "Plannen mislukt: \(error.localizedDescription)"
+            }
+        }
+        #endif
+        scheduleFallbackTone(at: .now.addingTimeInterval(60))
+        return "Testwekker over 1 minuut (laat Snoredle open staan)."
+    }
+
     // MARK: Tijdens een meting
 
     func arm() async {

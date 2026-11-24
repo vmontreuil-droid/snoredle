@@ -55,15 +55,29 @@ struct AlarmsView: View {
     @ObservedObject var service = AlarmService.shared
     @Environment(\.dismiss) private var dismiss
     @State private var editing: AlarmItem?
+    @State private var testMessage: String?
 
     var body: some View {
         NavigationStack {
             List {
-                if service.permissionDenied {
-                    Label("Geef Snoredle toegang tot wekkers in Instellingen › Apps › Snoredle.",
-                          systemImage: "exclamationmark.triangle.fill")
-                        .font(.footnote).foregroundStyle(.orange)
+                Section {
+                    HStack {
+                        Label("Toestemming", systemImage: "checkmark.shield")
+                        Spacer()
+                        Text(service.permissionText).font(.footnote)
+                            .foregroundStyle(service.permissionDenied ? .orange : .secondary)
+                    }
+                    if service.permissionDenied {
+                        Button("Open Instellingen") {
+                            if let u = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(u) }
+                        }
+                    }
+                    Button {
+                        Task { testMessage = await service.testAlarm() }
+                    } label: { Label("Test wekker (over 1 minuut)", systemImage: "alarm.waves.left.and.right") }
+                    if let testMessage { Text(testMessage).font(.footnote).foregroundStyle(.secondary) }
                 }
+                .listRowBackground(Color.white.opacity(0.05))
                 ForEach(service.alarms) { a in
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
