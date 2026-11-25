@@ -22,7 +22,9 @@ final class HealthKitService {
         read.insert(HKCategoryType(.sleepAnalysis))
         read.insert(HKQuantityType(.dietaryCaffeine))
         read.insert(HKQuantityType(.numberOfAlcoholicBeverages))
-        let share: Set<HKSampleType> = [HKCategoryType(.sleepAnalysis)]
+        // Workout: nodig zodat de watch 's nachts een sessie mag starten (blijft dan actief op de achtergrond).
+        let share: Set<HKSampleType> = [HKCategoryType(.sleepAnalysis), HKObjectType.workoutType()]
+        read.insert(HKQuantityType(.heartRate))
         try await store.requestAuthorization(toShare: share, read: read)
     }
 

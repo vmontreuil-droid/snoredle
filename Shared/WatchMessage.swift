@@ -20,6 +20,7 @@ public enum WatchMessage: Codable, Sendable {
     case request(WatchCommand)                       // bediening vanaf de watch
     case heartbeat(Heartbeat)                        // elke paar seconden; antwoord kan een tikje bevatten
     case nudgeDone(at: Date)                         // watch bevestigt dat er getikt is
+    case log(String)                                 // regel voor het diagnoselogboek van de iPhone
 
     public func encoded() throws -> Data { try JSONEncoder.snoredle.encode(self) }
     public static func decode(_ data: Data) throws -> WatchMessage {

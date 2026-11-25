@@ -72,6 +72,7 @@ final class AlarmService: ObservableObject {
     private var smartFired = false
     private var lastSignalLog = Date.distantPast
     private var sessionActive = false
+    private var syncWhenQuiet = false
     private let tone = SoundSynth()
     private static let storeKey = "alarms.v2"
 
@@ -172,9 +173,7 @@ final class AlarmService: ObservableObject {
             for a in alarms where a.enabled {
                 if let skipUntil = skips[a.id] {
                     // Vandaag al slim gewekt: alleen de volgende keer plannen (herhaling komt bij de volgende sync terug).
-                    if let next = a.next(after: skipUntil.addingTimeInterval(60)) {
-                        _ = try? await AlarmKitBackend.scheduleOnce(at: next, title: a.label, id: a.id)
-                    }
+                    await AlarmKitBackend.scheduleUpcoming(a, after: skipUntil.addingTimeInterval(60))
                 } else {
                     do { try await AlarmKitBackend.scheduleRepeating(a) }
                     catch { DiagLog.shared.log("wekker", "plannen \(a.timeText) mislukt: \(error.localizedDescription)") }
@@ -299,7 +298,8 @@ final class AlarmService: ObservableObject {
         if alerting.isEmpty { stopRinging() }
         else { tone.stop(fade: 0.3); isRinging = false }   // AlarmKit rinkelt nog: watch laten trillen
         armedFor = nil
-        if smartFired { Task { await sync() } }        // herhalende wekker na slim wekken terugzetten
+        // Herhalende wekker na slim wekken terugzetten — pas als er niets meer rinkelt.
+        if smartFired { if alerting.isEmpty { Task { await sync() } } else { syncWhenQuiet = true } }
     }
 
     /// Beweging van de watch: binnen het slimme venster → nu wekken.
@@ -327,10 +327,13 @@ final class AlarmService: ObservableObject {
             if let original = item.next(after: .now) { skips[item.id] = original }
             Self.saveSkips(skips)
             AlarmKitBackend.cancel(item.id)
-            if let tomorrow = item.next(after: .now.addingTimeInterval(3600)) {
-                _ = try? await AlarmKitBackend.scheduleOnce(at: tomorrow, title: item.label, id: item.id)
+            // Eerst het wekgeluid, dan de volgende dagen opnieuw klaarzetten.
+            do { _ = try await AlarmKitBackend.scheduleOnce(at: .now.addingTimeInterval(3), title: item.label, id: UUID()) }
+            catch {
+                DiagLog.shared.log("slim", "slimme wekker plannen MISLUKT: \(error.localizedDescription) → eigen toon")
+                startRinging()
             }
-            _ = try? await AlarmKitBackend.scheduleOnce(at: .now.addingTimeInterval(3), title: item.label, id: UUID())
+            await AlarmKitBackend.scheduleUpcoming(item, after: (item.next(after: .now) ?? .now).addingTimeInterval(60))
             return
         }
         #endif
@@ -364,6 +367,10 @@ final class AlarmService: ObservableObject {
                 if !started.subtracting(self.nonStoppingIDs).isEmpty, self.sessionActive {
                     DiagLog.shared.log("wekker", "nacht wordt afgesloten zodat het wekkergeluid vrij baan heeft")
                     self.onAlarmStarted?()
+                }
+                if !stopped.isEmpty, nowAlerting.isEmpty, self.syncWhenQuiet {
+                    self.syncWhenQuiet = false
+                    Task { await self.sync() }
                 }
                 if !stopped.isEmpty {
                     self.nudgeTask?.cancel()
@@ -466,8 +473,21 @@ enum AlarmKitBackend {
 
     static func cancel(_ id: UUID) { try? AlarmManager.shared.cancel(id: id) }
 
+    /// Alles annuleren behalve wat nu rinkelt (anders valt een rinkelende wekker stil).
     static func cancelAll() {
-        for a in (try? AlarmManager.shared.alarms) ?? [] { try? AlarmManager.shared.cancel(id: a.id) }
+        for a in (try? AlarmManager.shared.alarms) ?? [] where a.state != .alerting {
+            try? AlarmManager.shared.cancel(id: a.id)
+        }
+    }
+
+    /// Vaste wekkers voor de komende 7 dagen (voor een herhalende wekker waarvan vandaag overgeslagen werd).
+    static func scheduleUpcoming(_ a: AlarmItem, after date: Date) async {
+        var t = date
+        for i in 0..<7 {
+            guard let next = a.next(after: t), next.timeIntervalSince(date) < 7.5 * 86_400 else { break }
+            _ = try? await scheduleOnce(at: next, title: a.label, id: i == 0 ? a.id : UUID())
+            t = next.addingTimeInterval(60)
+        }
     }
 }
 #endif

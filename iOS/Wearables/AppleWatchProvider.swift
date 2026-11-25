@@ -202,6 +202,7 @@ final class AppleWatchProvider: NSObject, WearableProvider, WCSessionDelegate {
         case .watchStatus(let s): subject.send(.status(s))
         case .request(let c): subject.send(.command(c))
         case .nudgeDone(let at): subject.send(.nudgeDelivered(at))
+        case .log(let text): DiagLog.shared.log("watch", "⌚︎ \(text)")
         case .heartbeat(let hb):
             subject.send(.position(hb.sample))
             if hb.movement > 0.3 { subject.send(.vital(.movement, hb.movement, hb.sample.at)) }

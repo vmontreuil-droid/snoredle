@@ -39,6 +39,7 @@ final class NightTracker: NSObject, ObservableObject {
     private var pending: [Data] = []               // berichten als de iPhone onbereikbaar is
     private var lastSentPosition: SleepPosition?
     private var lastSentAt = Date.distantPast
+    private var phoneWasReachable = true
 
     // MARK: Sessie
 
@@ -50,6 +51,7 @@ final class NightTracker: NSObject, ObservableObject {
         trackingSince = .now
         startWorkout()
         startMotion()
+        remoteLog("meting op watch gestart (elke \(Int(settings.sampleIntervalSeconds)) s een seintje)")
         stepTotal = 0; stepsReported = 0
         if CMPedometer.isStepCountingAvailable() {
             pedometer.startUpdates(from: .now) { [weak self] data, _ in
@@ -69,7 +71,8 @@ final class NightTracker: NSObject, ObservableObject {
         sampleTimer?.invalidate(); sampleTimer = nil
         motion.stopDeviceMotionUpdates()
         pedometer.stopUpdates()
-        workout?.end()
+        let w = workout; workout = nil
+        w?.end()
         // Workout niet bewaren: het is geen training en mag je activiteitsringen niet beïnvloeden.
         let b = builder
         b?.endCollection(withEnd: .now) { _, _ in b?.discardWorkout() }
@@ -86,16 +89,34 @@ final class NightTracker: NSObject, ObservableObject {
         config.locationType = .indoor
         do {
             let w = try HKWorkoutSession(healthStore: health, configuration: config)
+            w.delegate = self
             let b = w.associatedWorkoutBuilder()
             b.dataSource = HKLiveWorkoutDataSource(healthStore: health, workoutConfiguration: config)
             b.delegate = self
             w.startActivity(with: .now)
             b.beginCollection(withStart: .now) { _, _ in }
             workout = w; builder = b
+            remoteLog("nachtsessie gestart")
         } catch {
             // Zonder workout loopt motion enkel zolang de app op de voorgrond is.
+            remoteLog("nachtsessie (workout) kon niet starten: \(error.localizedDescription) – open Snoredle op de watch en sta Gezondheid toe")
         }
     }
+
+    /// watchOS beëindigde de workout (of hij faalde) terwijl we nog meten: opnieuw starten.
+    fileprivate func workoutEnded(_ reason: String) {
+        remoteLog("nachtsessie gestopt door watchOS (\(reason))")
+        guard isTracking else { return }
+        workout = nil; builder = nil
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            guard self.isTracking, self.workout == nil else { return }
+            self.startWorkout()
+        }
+    }
+
+    /// Stuurt een regel naar het logboek op de iPhone.
+    func remoteLog(_ text: String) { sendReliable(.log(text)) }
 
     // MARK: Beweging
 
@@ -147,6 +168,10 @@ final class NightTracker: NSObject, ObservableObject {
     private func sendHeartbeat(_ hb: Heartbeat) {
         guard let data = try? WatchMessage.heartbeat(hb).encoded() else { return }
         let s = WCSession.default
+        if s.isReachable != phoneWasReachable {
+            phoneWasReachable = s.isReachable
+            remoteLog(s.isReachable ? "iPhone weer bereikbaar" : "iPhone niet bereikbaar (Bluetooth/wifi?) – gegevens worden bewaard")
+        }
         guard s.activationState == .activated, s.isReachable else {
             // iPhone even weg: houding en beweging bewaren voor later.
             if hb.sample.position != lastSentPosition || Date().timeIntervalSince(lastSentAt) > 300 {
@@ -222,7 +247,8 @@ final class NightTracker: NSObject, ObservableObject {
         Task {
             defer {
                 if ownSession && !isTracking {
-                    workout?.end()
+                    let w = workout; workout = nil
+                    w?.end()
                     let b = builder
                     b?.endCollection(withEnd: .now) { _, _ in b?.discardWorkout() }
                     workout = nil; builder = nil
@@ -323,6 +349,24 @@ final class NightTracker: NSObject, ObservableObject {
             pausedUntil = until
             if !rec && isTracking { stop() }
         default: break
+        }
+    }
+}
+
+extension NightTracker: HKWorkoutSessionDelegate {
+    nonisolated func workoutSession(_ s: HKWorkoutSession, didChangeTo toState: HKWorkoutSessionState,
+                                    from fromState: HKWorkoutSessionState, date: Date) {
+        guard toState == .ended || toState == .stopped else { return }
+        Task { @MainActor in
+            // Alleen reageren als het onze huidige sessie is en wij niet zelf stopten.
+            guard NightTracker.shared.workout === s else { return }
+            NightTracker.shared.workoutEnded("toestand \(toState.rawValue)")
+        }
+    }
+    nonisolated func workoutSession(_ s: HKWorkoutSession, didFailWithError error: Error) {
+        Task { @MainActor in
+            guard NightTracker.shared.workout === s else { return }
+            NightTracker.shared.workoutEnded("fout: \(error.localizedDescription)")
         }
     }
 }
