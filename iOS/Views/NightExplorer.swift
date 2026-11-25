@@ -250,7 +250,7 @@ struct NightShareCard: View {
                 ScoreRing(score: session.snoreScore).frame(width: 170, height: 170).scaleEffect(1.0)
                 VStack(alignment: .leading, spacing: 10) {
                     Text(SnoreAnalysis.scoreLabel(session.snoreScore)).font(.system(size: 46, weight: .bold, design: .rounded))
-                    Text(String(format: "%.1f uur geslapen", session.duration / 3600)).font(.system(size: 24))
+                    Text(String(format: "%.1f uur geslapen", session.sleepDuration / 3600)).font(.system(size: 24))
                     Text("\(Int(session.snoreMinutes)) min gesnurkt").font(.system(size: 24))
                     if session.nudgeCount > 0 { Text("\(session.nudgeCount) tikjes van de watch").font(.system(size: 24)) }
                 }

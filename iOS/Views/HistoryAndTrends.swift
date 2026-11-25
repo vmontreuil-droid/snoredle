@@ -23,7 +23,7 @@ struct HistoryView: View {
                             ScoreRing(score: s.snoreScore).frame(width: 44, height: 44).font(.caption)
                             VStack(alignment: .leading) {
                                 Text(s.nightTitle).font(.headline)
-                                Text("\(Int(s.snoreMinutes)) min snurken · \(String(format: "%.1f", s.duration / 3600)) u · \(s.factors.map(\.emoji).joined())")
+                                Text("\(Int(s.snoreMinutes)) min snurken · \(String(format: "%.1f", s.sleepDuration / 3600)) u · \(s.factors.map(\.emoji).joined())")
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()

@@ -98,18 +98,23 @@ final class AlarmService: ObservableObject {
     private func save() {
         if let d = try? JSONEncoder().encode(alarms) { UserDefaults.standard.set(d, forKey: Self.storeKey) }
         settings.alarmEnabled = alarms.contains(where: \.enabled)
+        WidgetBridge.updateAlarm(nextAlarmDate())
     }
 
     func upsert(_ item: AlarmItem) {
+        var item = item
+        item.minutes = ((item.minutes % 1440) + 1440) % 1440          // nooit 24:xx
         if let i = alarms.firstIndex(where: { $0.id == item.id }) { alarms[i] = item } else { alarms.append(item) }
         alarms.sort { $0.minutes < $1.minutes }
         save()
+        if sessionActive { armedFor = nextAlarmDate() }       // wekker gewijzigd tijdens de nacht
         Task { await sync() }
     }
 
     func delete(_ item: AlarmItem) {
         alarms.removeAll { $0.id == item.id }
         save()
+        if sessionActive { armedFor = nextAlarmDate() }
         Task { await sync() }
     }
 

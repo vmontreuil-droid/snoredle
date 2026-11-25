@@ -36,7 +36,7 @@ enum Achievements {
         }.count
         let watchNights = done.filter { !$0.positions.isEmpty }.count
         let goal = AppSettings.shared.sleepGoalHours
-        let goalNights = done.filter { $0.duration / 3600 >= goal }.count
+        let goalNights = done.filter { $0.sleepDuration / 3600 >= goal }.count
         let remedyNights = done.filter { !$0.remediesRaw.isEmpty }.count
 
         // Verbetering: laatste 7 nachten vs. de 7 daarvoor

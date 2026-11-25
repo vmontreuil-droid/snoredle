@@ -99,12 +99,12 @@ struct SessionDetailView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(SnoreAnalysis.scoreLabel(session.snoreScore)).font(.title2.bold())
                 Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 2) {
-                    row("Geslapen", String(format: "%.1f u", session.duration / 3600)
-                        + (session.duration / 3600 >= AppSettings.shared.sleepGoalHours ? " ✓ doel" : ""))
+                    row("Geslapen", String(format: "%.1f u", session.sleepDuration / 3600)
+                        + (session.sleepDuration / 3600 >= AppSettings.shared.sleepGoalHours ? " ✓ doel" : ""))
                     row("Gesnurkt", "\(Int(session.snoreMinutes)) min (\(Int(session.snorePercentage * 100))%)")
                     row("Luid / episch", "\(Int(session.loudSnoreMinutes)) / \(Int(session.epicSnoreMinutes)) min")
                     row("Piek", "\(Int(session.peakDecibel)) dB")
-                    if session.nudgeCount > 0 { row("Tikjes", "\(session.nudgeCount)") }
+                    if session.nudgeCount > 0 { row("Gewekt", "\(session.nudgeCount)× (tik of geluid)") }
                 }.font(.subheadline)
             }
         }
@@ -264,11 +264,13 @@ struct SessionDetailView: View {
 
     /// Luidste snurkfragment, of anders het langste praatmoment.
     private var highlight: Highlight? {
-        if let e = session.events.filter({ $0.clipFileName != nil }).max(by: { $0.peakDecibel < $1.peakDecibel }),
+        // Alleen fragmenten die nog bestaan (oude worden automatisch opgeruimd).
+        func exists(_ name: String?) -> Bool { name.map { FileManager.default.fileExists(atPath: ClipRecorder.url(for: $0).path) } ?? false }
+        if let e = session.events.filter({ exists($0.clipFileName) }).max(by: { $0.peakDecibel < $1.peakDecibel }),
            let c = e.clipFileName {
             return Highlight(title: "Luidste snurk", detail: "\(Int(e.peakDecibel)) dB om \(e.start.formatted(date: .omitted, time: .shortened))", clip: c)
         }
-        if let t = session.nightSounds.filter({ $0.clipFileName != nil }).max(by: { $0.duration < $1.duration }),
+        if let t = session.nightSounds.filter({ exists($0.clipFileName) }).max(by: { $0.duration < $1.duration }),
            let c = t.clipFileName {
             return Highlight(title: "Je praatte in je slaap", detail: "\(Int(t.duration)) s om \(t.start.formatted(date: .omitted, time: .shortened))", clip: c)
         }

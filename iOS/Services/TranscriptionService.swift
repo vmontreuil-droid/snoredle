@@ -26,7 +26,10 @@ final class TranscriptionService: ObservableObject {
         defer { busy.remove(clip) }
 
         // Stille opnames eerst luider maken, anders herkent iOS niets.
-        let url = (try? Self.normalizedCopy(of: ClipRecorder.url(for: clip))) ?? ClipRecorder.url(for: clip)
+        let original = ClipRecorder.url(for: clip)
+        guard FileManager.default.fileExists(atPath: original.path) else { error = "Het geluidsfragment bestaat niet meer."; return }
+        let url = (try? Self.normalizedCopy(of: original)) ?? original
+        defer { if url != original { try? FileManager.default.removeItem(at: url) } }
         let req = SFSpeechURLRecognitionRequest(url: url)
         req.shouldReportPartialResults = false
         if rec.supportsOnDeviceRecognition { req.requiresOnDeviceRecognition = true }

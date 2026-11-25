@@ -358,7 +358,7 @@ struct LastNightCard: View {
                         .font(.system(.title2, design: .rounded).weight(.bold))
                     HStack(spacing: 14) {
                         Label("\(Int(session.snoreMinutes)) min", systemImage: "waveform")
-                        Label(String(format: "%.1f u", session.duration / 3600), systemImage: "bed.double.fill")
+                        Label(String(format: "%.1f u", session.sleepDuration / 3600), systemImage: "bed.double.fill")
                     }
                     .font(.footnote).foregroundStyle(.secondary)
                 }

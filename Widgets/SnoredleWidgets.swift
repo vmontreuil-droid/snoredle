@@ -77,7 +77,7 @@ struct ScoreWidgetView: View {
                     Divider().overlay(.white.opacity(0.1))
                     Text("Afgelopen nachten").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     weekBars(s).frame(height: 60)
-                    if let a = s.alarm {
+                    if let a = s.alarm, a > .now {          // verlopen wekker niet meer tonen
                         Label("Wekker \(a.formatted(date: .omitted, time: .shortened))", systemImage: "alarm.fill")
                             .font(.caption).foregroundStyle(amber)
                     }

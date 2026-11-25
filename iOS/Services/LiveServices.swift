@@ -58,13 +58,21 @@ final class LiveActivityService {
 /// Schrijft de samenvatting voor de widgets.
 @MainActor
 enum WidgetBridge {
+    /// Alleen de wekker bijwerken (na wijzigen van wekkers).
+    static func updateAlarm(_ date: Date?) {
+        guard var s = WidgetSummary.load() else { return }
+        s.alarm = date
+        s.save()
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
     static func publish(context: ModelContext) {
         let all = (try? context.fetch(FetchDescriptor<SleepSession>(sortBy: [SortDescriptor(\.start)]))) ?? []
         let done = all.filter { $0.end != nil }
         guard let last = done.last else { return }
         let summary = WidgetSummary(
             date: last.start, score: last.snoreScore, label: SnoreAnalysis.scoreLabel(last.snoreScore),
-            snoreMinutes: Int(last.snoreMinutes), hours: last.duration / 3600,
+            snoreMinutes: Int(last.snoreMinutes), hours: last.sleepDuration / 3600,
             weekScores: done.suffix(7).map(\.snoreScore),
             streak: Achievements.streak(done),
             alarm: AlarmService.shared.nextAlarmDate(),

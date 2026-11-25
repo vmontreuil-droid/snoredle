@@ -73,6 +73,12 @@ extension BluetoothHeartRateProvider: CBCentralManagerDelegate, CBPeripheralDele
         isAvailable = false
         if wantsScan { central.connect(p) }     // automatisch opnieuw verbinden
     }
+    func centralManager(_ central: CBCentralManager, didFailToConnect p: CBPeripheral, error: Error?) {
+        // Verbinden mislukt: opnieuw zoeken in plaats van vast te blijven hangen.
+        peripheral = nil
+        DiagLog.shared.log("bluetooth", "verbinden met \(p.name ?? "toestel") mislukt: \(error?.localizedDescription ?? "?")")
+        scan()
+    }
     func peripheral(_ p: CBPeripheral, didDiscoverServices error: Error?) {
         p.services?.forEach { p.discoverCharacteristics([Self.hrMeasurement], for: $0) }
     }

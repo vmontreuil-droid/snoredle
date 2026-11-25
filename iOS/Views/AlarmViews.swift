@@ -119,7 +119,7 @@ struct AlarmsView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Button("Klaar") { dismiss() } }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { editing = AlarmItem(minutes: service.alarms.last.map { $0.minutes + 15 } ?? 7 * 60) } label: {
+                    Button { editing = AlarmItem(minutes: service.alarms.last.map { ($0.minutes + 15) % 1440 } ?? 7 * 60) } label: {
                         Image(systemName: "plus")
                     }
                 }

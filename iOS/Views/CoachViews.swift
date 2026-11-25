@@ -45,15 +45,17 @@ struct CoachView: View {
         let start = cal.startOfDay(for: Date(timeIntervalSince1970: coachStart))
         return (0..<14).map { i in
             let d = cal.date(byAdding: .day, value: i, to: start)!
-            let night = done.first { cal.isDate($0.end ?? $0.start, inSameDayAs: cal.date(byAdding: .day, value: 1, to: d)!) }
+            let morning = cal.date(byAdding: .day, value: 1, to: d)!
+            let night = done.first { cal.isDate($0.end ?? $0.start, inSameDayAs: morning) }
             let target = i < 7 ? 0.30 : 0.15
             let status: DayStatus
-            if d > .now { status = .future }
-            else if let n = night {
+            if let n = night {
                 let st = SnoreAnalysis.positionStats(n)
                 let total = st.map(\.minutes).reduce(0, +)
                 let back = total > 0 ? (st.first { $0.position == .back }?.minutes ?? 0) / total : 1
                 status = (total > 0 && back <= target) ? .success : .tried
+            } else if morning.addingTimeInterval(12 * 3600) > .now {
+                status = .future            // deze nacht komt nog (of loopt nu)
             } else { status = .missed }
             return (i + 1, d, status)
         }

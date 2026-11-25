@@ -14,7 +14,7 @@ enum ExportService {
             let back = total > 0 ? (stats.first { $0.position == .back }?.minutes ?? 0) / total * 100 : 0
             rows.append([
                 df.string(from: s.start), tf.string(from: s.start), s.end.map(tf.string) ?? "",
-                String(format: "%.1f", s.duration / 3600), "\(s.snoreScore)",
+                String(format: "%.1f", s.sleepDuration / 3600), "\(s.snoreScore)",
                 String(format: "%.0f", s.snoreMinutes), String(format: "%.0f", s.loudSnoreMinutes),
                 String(format: "%.0f", s.epicSnoreMinutes), String(format: "%.0f", s.averageDecibel),
                 String(format: "%.0f", s.peakDecibel), "\(s.nudgeCount)", "\(s.possibleApneaEvents)",
@@ -24,7 +24,8 @@ enum ExportService {
             ].joined(separator: ";"))
         }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("Snoredle-export.csv")
-        try? rows.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        // BOM zodat Excel de accenten (é, ë) juist toont.
+        try? ("\u{FEFF}" + rows.joined(separator: "\n")).write(to: url, atomically: true, encoding: .utf8)
         return url
     }
 
@@ -61,10 +62,11 @@ struct DoctorReportView: View {
                 stat("Mogelijke ademstops", "\(apnea)")
             }
             Divider()
-            ForEach(done) { s in
+            // Hoogstens de laatste 45 nachten, zodat het rapport afdrukbaar blijft.
+            ForEach(done.suffix(45)) { s in
                 HStack {
                     Text(s.start.formatted(date: .numeric, time: .omitted)).frame(width: 90, alignment: .leading)
-                    Text(String(format: "%.1f u", s.duration / 3600)).frame(width: 50)
+                    Text(String(format: "%.1f u", s.sleepDuration / 3600)).frame(width: 50)
                     Text("score \(s.snoreScore)").frame(width: 70)
                     Text("\(Int(s.snoreMinutes)) min").frame(width: 60)
                     Text(s.factors.map(\.emoji).joined()).frame(maxWidth: .infinity, alignment: .leading)
