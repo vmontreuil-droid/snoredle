@@ -322,17 +322,25 @@ final class SessionManager: ObservableObject {
         // Echte slaapfasen (niet enkel "in bed") komen soms pas later: dan opnieuw ophalen en vervangen.
         if !session.stages.contains(where: { $0.stage != .inBed }) {
             let fetched = await hk.stages(from: session.start.addingTimeInterval(-1800), to: end.addingTimeInterval(1800))
-            if fetched.contains(where: { $0.0 != .inBed }) || session.stages.isEmpty {
-                session.stages.forEach { context?.delete($0) }
+            if fetched.contains(where: { $0.0 != .inBed }) {
+                // Eerst een kopie nemen: niet verwijderen terwijl we door dezelfde lijst lopen (crash).
+                let old = Array(session.stages)
+                session.stages = fetched.map { SleepStageSample(start: $0.1, end: $0.2, stage: $0.0) }
+                for o in old { context?.delete(o) }
+            } else if session.stages.isEmpty, !fetched.isEmpty {
                 session.stages = fetched.map { SleepStageSample(start: $0.1, end: $0.2, stage: $0.0) }
             }
         }
     }
 
     /// Bij het openen van de app: recente nachten aanvullen met Gezondheid.
+    private var backfilling = false
     func backfillHealth() async {
-        guard settings.useHealthKit, state == .idle, let ctx = context,
+        // Nooit twee keer tegelijk (de app kan snel na elkaar actief worden).
+        guard !backfilling, settings.useHealthKit, state == .idle, let ctx = context,
               UIApplication.shared.isProtectedDataAvailable else { return }
+        backfilling = true
+        defer { backfilling = false }
         let since = Date().addingTimeInterval(-48 * 3600)
         let recent = (try? ctx.fetch(FetchDescriptor<SleepSession>(predicate: #Predicate<SleepSession> { $0.start > since }))) ?? []
         var changed = false
