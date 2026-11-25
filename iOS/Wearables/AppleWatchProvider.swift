@@ -15,9 +15,17 @@ final class AppleWatchProvider: NSObject, WearableProvider, WCSessionDelegate {
     private var session: WCSession? { WCSession.isSupported() ? WCSession.default : nil }
 
     var isAvailable: Bool {
-        guard let s = session else { return false }
-        return s.activationState == .activated && s.isPaired && s.isWatchAppInstalled
+        guard let s = session, s.activationState == .activated, s.isPaired else { return false }
+        // isWatchAppInstalled is soms even (onterecht) false: een recent seintje telt ook.
+        return s.isWatchAppInstalled || isLive
     }
+    /// De watch stuurde de laatste 3 minuten nog seintjes.
+    var isLive: Bool { Date().timeIntervalSince(lastHeartbeat) < 180 }
+    private(set) var lastHeartbeat = Date.distantPast
+
+    private var currentSession: (UUID, WatchSettings)?
+    private var watchdog: Timer?
+    private var restarts = 0
 
     override init() {
         super.init()
@@ -26,22 +34,54 @@ final class AppleWatchProvider: NSObject, WearableProvider, WCSessionDelegate {
     }
 
     func startSession(id: UUID, settings: WatchSettings) {
-        guard isAvailable else { return }
-        // Start de watch-app (ook als die niet open staat) met een workoutsessie.
+        guard let s = session else { return }
+        if s.activationState != .activated { s.activate() }
+        // Niet meer afhankelijk van isWatchAppInstalled: dat stond vorige nacht onterecht op false,
+        // waardoor de watch nooit gestart werd. Gekoppeld = proberen.
+        guard s.isPaired || s.activationState != .activated else {
+            DiagLog.shared.log("watch", "geen watch gekoppeld → niet gestart"); return
+        }
+        currentSession = (id, settings); restarts = 0
+        launchWatch(id: id, settings: settings, reason: "start nacht")
+        DispatchQueue.main.async {
+            self.watchdog?.invalidate()
+            self.watchdog = Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in self?.checkWatchdog() }
+        }
+    }
+    func stopSession(id: UUID) {
+        currentSession = nil
+        DispatchQueue.main.async { self.watchdog?.invalidate(); self.watchdog = nil }
+        send(.stopSession(sessionID: id), reliable: true)
+    }
+
+    /// Start de watch-app (ook als die niet open staat) met een workoutsessie.
+    private func launchWatch(id: UUID, settings: WatchSettings, reason: String) {
         let config = HKWorkoutConfiguration()
         config.activityType = .mindAndBody
         config.locationType = .indoor
-        HKHealthStore().startWatchApp(with: config) { _, _ in }
+        HKHealthStore().startWatchApp(with: config) { ok, error in
+            DiagLog.shared.log("watch", "watch-app starten (\(reason)): \(ok ? "gelukt" : "MISLUKT")\(error.map { " – \($0.localizedDescription)" } ?? "") · app op watch \(self.session?.isWatchAppInstalled ?? false)")
+        }
         send(.startSession(sessionID: id, settings: settings), reliable: true)
     }
-    func stopSession(id: UUID) { send(.stopSession(sessionID: id), reliable: true) }
+
+    /// Elke 2 min: geen seintjes meer? Dan de watch-app opnieuw starten.
+    private func checkWatchdog() {
+        guard let (id, settings) = currentSession else { return }
+        guard Date().timeIntervalSince(lastHeartbeat) > 150 else { return }
+        restarts += 1
+        // Eerst vaak proberen, daarna om de 10 min.
+        guard restarts <= 5 || restarts % 5 == 0 else { return }
+        launchWatch(id: id, settings: settings, reason: "geen seintjes, poging \(restarts)")
+    }
     /// Tikje klaarzetten. De watch haalt het op bij zijn volgende seintje (werkt ook 's nachts
     /// met de iPhone-app op de achtergrond). Is de watch rechtstreeks bereikbaar, dan meteen.
     func nudge(_ intensity: NudgeIntensity) {
         lock.lock(); pendingNudge = (intensity, Date()); lock.unlock()
         guard let s = session, s.activationState == .activated, s.isReachable,
               let data = try? WatchMessage.nudge(intensity: intensity).encoded() else {
-            DiagLog.shared.log("tikje", "watch niet rechtstreeks bereikbaar → wacht op volgend seintje")
+            if isLive { DiagLog.shared.log("tikje", "watch niet rechtstreeks bereikbaar → wacht op volgend seintje") }
+            else { DiagLog.shared.log("tikje", "watch stuurt geen seintjes → tikje kan niet geleverd worden") }
             return
         }
         // Rechtstreeks proberen; lukt het niet, dan blijft het klaarstaan voor het volgende seintje.
@@ -70,6 +110,8 @@ final class AppleWatchProvider: NSObject, WearableProvider, WCSessionDelegate {
     func session(_ session: WCSession, didReceiveMessageData messageData: Data, replyHandler: @escaping (Data) -> Void) {
         guard let msg = try? WatchMessage.decode(messageData) else { replyHandler(Data()); return }
         if case .heartbeat(let hb) = msg {
+            if !isLive { DiagLog.shared.log("watch", "seintjes komen binnen ✓"); DispatchQueue.main.async { self.subject.send(.availabilityChanged) } }
+            lastHeartbeat = .now
             DiagLog.shared.heartbeat(position: hb.sample.position.label, movement: hb.movement)
             if let n = hb.steps, n > 0 { subject.send(.steps(n, hb.sample.at)) }
             subject.send(.upright(hb.sample.position == .upright, hb.sample.at))
@@ -173,7 +215,10 @@ final class AppleWatchProvider: NSObject, WearableProvider, WCSessionDelegate {
         DiagLog.shared.log("watch", "verbinding geactiveerd: status \(state.rawValue), gekoppeld \(session.isPaired), app op watch \(session.isWatchAppInstalled)\(error.map { ", fout: \($0.localizedDescription)" } ?? "")")
         subject.send(.availabilityChanged)
     }
-    func sessionWatchStateDidChange(_ session: WCSession) { subject.send(.availabilityChanged) }
+    func sessionWatchStateDidChange(_ session: WCSession) {
+        DiagLog.shared.log("watch", "watch-toestand gewijzigd: gekoppeld \(session.isPaired), app op watch \(session.isWatchAppInstalled)")
+        subject.send(.availabilityChanged)
+    }
     func sessionReachabilityDidChange(_ session: WCSession) {
         DiagLog.shared.log("watch", "bereikbaar: \(session.isReachable)")
         subject.send(.availabilityChanged)
@@ -186,7 +231,7 @@ final class AppleWatchProvider: NSObject, WearableProvider, WCSessionDelegate {
         guard let s = session else { return "Deze iPhone ondersteunt geen Apple Watch" }
         if s.activationState != .activated { return "Verbinding met je watch maken…" }
         if !s.isPaired { return "Geen Apple Watch gekoppeld" }
-        if !s.isWatchAppInstalled { return "Installeer Snoredle op je watch via de Watch-app" }
+        if !s.isWatchAppInstalled && !isLive { return "Snoredle niet gevonden op je watch – open de app één keer op je watch" }
         return nil
     }
     func sessionDidBecomeInactive(_ session: WCSession) {}

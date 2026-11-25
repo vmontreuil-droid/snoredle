@@ -39,7 +39,8 @@ final class SnoreDetector: NSObject {
 
     func start() throws {
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .measurement,
+        // .default i.p.v. .measurement: in meetmodus speelt de speaker veel stiller af.
+        try session.setCategory(.playAndRecord, mode: .default,
                                 options: [.mixWithOthers, .allowBluetooth, .defaultToSpeaker])
         try session.setActive(true)
 

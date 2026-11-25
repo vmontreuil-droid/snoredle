@@ -123,6 +123,32 @@ private final class SynthState {
 
 /// Kleine synthesizer op een eigen AVAudioEngine.
 final class SoundSynth {
+    /// Rendert een geluid naar een bestand (voor AVAudioPlayer: betrouwbaar op de achtergrond).
+    static func renderFile(_ sound: SynthSound, seconds: Double) -> URL? {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("synth-\(sound.rawValue)-\(Int(seconds * 10)).caf")
+        if FileManager.default.fileExists(atPath: url.path) { return url }
+        let rate = 44_100.0
+        guard let format = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 1),
+              let buf = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(rate * seconds)),
+              let ptr = buf.floatChannelData?[0] else { return nil }
+        let st = SynthState()
+        st.sound = sound; st.sampleRate = rate; st.gain = 1; st.target = 1; st.step = 0
+        let n = Int(rate * seconds)
+        let fade = Int(rate * 0.05)
+        for i in 0..<n {
+            var v = st.sample()
+            if i < fade { v *= Float(i) / Float(fade) }
+            if i > n - fade { v *= Float(n - i) / Float(fade) }
+            ptr[i] = max(-1, min(1, v * 1.6))       // zo luid mogelijk zonder te vervormen
+        }
+        buf.frameLength = AVAudioFrameCount(n)
+        do {
+            let file = try AVAudioFile(forWriting: url, settings: format.settings)
+            try file.write(from: buf)
+            return url
+        } catch { return nil }
+    }
+
     private let engine = AVAudioEngine()
     private let state = SynthState()
     private var node: AVAudioSourceNode?

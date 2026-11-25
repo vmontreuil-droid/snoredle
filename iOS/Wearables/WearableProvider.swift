@@ -79,6 +79,8 @@ final class WearableHub: ObservableObject {
         providers.compactMap { ($0 as? AppleWatchProvider)?.statusHint }.first
     }
     var watchReachable: Bool { providers.contains { ($0 as? AppleWatchProvider)?.isReachable == true } }
+    /// Er komen nu echt seintjes van de watch binnen.
+    var watchLive: Bool { providers.contains { ($0 as? AppleWatchProvider)?.isLive == true } }
     var hasHaptics: Bool { active.contains { $0.capabilities.contains(.haptics) } }
 
     // Start/stop gaat naar álle providers: sommige (Bluetooth) worden pas beschikbaar na verbinden.

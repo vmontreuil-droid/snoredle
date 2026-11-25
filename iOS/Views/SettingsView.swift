@@ -129,9 +129,10 @@ struct SettingsView: View {
                             Image(systemName: "speaker.wave.3.fill").foregroundStyle(.secondary)
                         }
                         Button("Test geluid") { NudgeSoundPlayer.shared.play() }
+                        Button("Test geluid (3e keer, luider)") { NudgeSoundPlayer.shared.play(level: 2) }
                     }
                 } header: { Text("Geluid bij snurken") } footer: {
-                    Text("Je iPhone speelt dit geluid als je snurkt (met dezelfde regels als de tikjes: na x seconden, alleen op je rug als je watch dat weet). Werkt ook zonder watch. Zet je iPhone-volume hoog genoeg.")
+                    Text("Je iPhone speelt dit geluid als je snurkt (met dezelfde regels als de tikjes: na x seconden, alleen op je rug als je watch dat weet). Werkt ook zonder watch. Blijf je snurken, dan wordt het telkens luider en langer. Het volume hier is een percentage van het mediavolume van je iPhone: zet dat 's avonds hoog genoeg (de stille modus speelt geen rol).")
                 }
 
                 Section("Watch en tikjes") {

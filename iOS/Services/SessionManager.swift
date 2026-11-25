@@ -38,6 +38,10 @@ final class SessionManager: ObservableObject {
     private var episodeClip: String?
     private var episodeNudged = false
     private var episodeSkipLogged = false
+    /// Aantal geluiden/tikjes in deze snurkperiode (voor luider worden).
+    private var episodeNudges = 0
+    /// Onrust via de microfoon (voor slim wekken zonder watch).
+    private var restlessStreak = 0
     private var lastNudge: Date = .distantPast
     private var clipsThisNight = 0
 
@@ -195,6 +199,7 @@ final class SessionManager: ObservableObject {
         Task { await AlarmService.shared.arm() }
         pausedUntil = nil; pauseStart = nil
         DiagLog.shared.resetCounters()
+        DiagLog.shared.log("nacht", "geluid bij snurken: \(NudgeSound(rawValue: settings.nudgeSoundRaw)?.label ?? "?") op \(Int(settings.nudgeSoundVolume * 100))% · mediavolume iPhone \(Int(NudgeSoundPlayer.systemVolume * 100))%")
         DiagLog.shared.log("nacht", "START · watch actief: \(hub.active.map(\.name)) · tikjes \(settings.nudgeEnabled ? "aan" : "uit") (alleen rug: \(settings.nudgeOnlyOnBack), na \(Int(settings.nudgeAfterSeconds)) s, eerste \(settings.nudgeQuietFirstMinutes) min niet) · volgende wekker: \(AlarmService.shared.nextItem.map { "\($0.0.timeText) slim=\($0.0.smart)" } ?? "geen")")
         defer { broadcastState() }
         LiveActivityService.shared.start(session: session, alarm: nil)
@@ -286,6 +291,16 @@ final class SessionManager: ObservableObject {
         let loudEnough = f.decibel > noiseFloor + 3
         let snoring = f.snoreConfidence >= settings.snoreThreshold && loudEnough && !interfering
 
+        // Slim wekken zonder watch: woelen/ritselen (luid, maar geen snurken of praten) telt als beweging.
+        if !hub.watchLive {
+            let restless = f.at.timeIntervalSince(lastNudge) > 10 && f.decibel > noiseFloor + 10 && f.snoreConfidence < 0.3 && (f.otherSounds["speech"] ?? 0) < 0.5
+            restlessStreak = restless ? restlessStreak + 1 : 0
+            if restlessStreak >= 3 {
+                restlessStreak = 0
+                AlarmService.shared.signal(movement: settings.smartWakeMovementThreshold, source: "geluid (woelen, +\(Int(f.decibel - noiseFloor)) dB)")
+            }
+        }
+
         if snoring {
             snoreStreak += 1
             lastSnoreFrame = f.at
@@ -348,6 +363,7 @@ final class SessionManager: ObservableObject {
     private func resetEpisode() {
         episodeStart = nil; episodeClip = nil; episodePeak = 0
         episodeConfidence = []; snoreStreak = 0; isSnoring = false
+        episodeNudges = 0
     }
 
     // MARK: Nachtgeluiden
@@ -411,7 +427,11 @@ final class SessionManager: ObservableObject {
         guard now.timeIntervalSince(session.start) > Double(settings.nudgeQuietFirstMinutes * 60) else { return skip("eerste \(settings.nudgeQuietFirstMinutes) min") }
         if settings.nudgeOnlyOnBack, currentPosition != .back, currentPosition != .unknown { return skip("houding \(currentPosition.label)") }
         if watchOn { hub.nudge(settings.nudgeIntensity) }
-        if soundOn { NudgeSoundPlayer.shared.play(); DiagLog.shared.log("tikje", "geluid gespeeld") }
+        if soundOn {
+            let r = NudgeSoundPlayer.shared.play(level: episodeNudges)
+            DiagLog.shared.log("tikje", "geluid: \(r)")
+        }
+        episodeNudges += 1
         DiagLog.shared.nudgeRequested("houding \(currentPosition.label), snurkt \(Int(now.timeIntervalSince(start))) s")
         lastNudge = now
     }

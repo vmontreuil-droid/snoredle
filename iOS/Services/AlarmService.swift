@@ -299,17 +299,17 @@ final class AlarmService: ObservableObject {
     }
 
     /// Beweging van de watch: binnen het slimme venster → nu wekken.
-    func signal(movement intensity: Double, at now: Date = .now) {
+    func signal(movement intensity: Double, at now: Date = .now, source: String = "watch") {
         guard sessionActive, !smartFired, !isRinging, let (item, end) = nextItem, item.smart else { return }
         let start = end.addingTimeInterval(-Double(item.smartWindow * 60))
         guard now >= start, now < end.addingTimeInterval(-30) else { return }
         if Date().timeIntervalSince(lastSignalLog) > 60 {
             lastSignalLog = .now
-            DiagLog.shared.log("slim", "in venster, beweging \(String(format: "%.2f", intensity)) (drempel \(String(format: "%.2f", settings.smartWakeMovementThreshold)))")
+            DiagLog.shared.log("slim", "in venster, \(source): beweging \(String(format: "%.2f", intensity)) (drempel \(String(format: "%.2f", settings.smartWakeMovementThreshold)))")
         }
         guard intensity >= settings.smartWakeMovementThreshold else { return }
         smartFired = true
-        DiagLog.shared.log("slim", "WEKKEN NU (gepland \(item.timeText))")
+        DiagLog.shared.log("slim", "WEKKEN NU via \(source) (gepland \(item.timeText))")
         lastWakeReason = "Gewekt om \(now.formatted(date: .omitted, time: .shortened)) tijdens lichte slaap (gepland \(item.timeText))"
         Task { await wakeNow(skipping: item) }
     }
