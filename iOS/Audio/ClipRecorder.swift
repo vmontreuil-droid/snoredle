@@ -93,6 +93,13 @@ final class ClipRecorder {
         writtenSeconds = 0
     }
 
+    /// Na een herstart van de microfoon kan het formaat veranderd zijn: oude buffers weggooien.
+    func reset() {
+        lock.lock(); defer { lock.unlock() }
+        file = nil; currentName = nil; writtenSeconds = 0
+        ring.removeAll(); ringDuration = 0
+    }
+
     /// Verwijdert clips ouder dan `days` die niet als favoriet gemarkeerd zijn.
     static func purge(olderThan days: Int, keeping favorites: Set<String>) {
         let limit = Date().addingTimeInterval(-Double(days) * 86_400)

@@ -316,6 +316,9 @@ final class NightTracker: NSObject, ObservableObject {
         case .startCalibration(let p): calibrate(p)
         case .calibrationProfile(let p): profile = p
         case .sessionState(let rec, let until):
+            // Net gestart? Dan kan dit een oude status zijn (van gisteren, via applicationContext)
+            // die toevallig na de start binnenkomt — niet stoppen. Een echte stop komt via stopSession.
+            if !rec && isTracking && Date().timeIntervalSince(trackingSince) < 180 { return }
             phoneRecording = rec
             pausedUntil = until
             if !rec && isTracking { stop() }

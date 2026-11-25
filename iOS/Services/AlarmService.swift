@@ -60,6 +60,9 @@ final class AlarmService: ObservableObject {
 
     /// Wordt aangeroepen als een wekker uitgezet is tijdens een meting (meting mag stoppen).
     var onDismissed: (() -> Void)?
+    /// Een echte wekker begint te rinkelen tijdens een meting: de meting wordt afgesloten
+    /// zodat de microfoon vrijkomt en het wekkergeluid zeker hoorbaar is.
+    var onAlarmStarted: (() -> Void)?
 
     private let settings = AppSettings.shared
     private var fallbackTask: Task<Void, Never>?
@@ -293,7 +296,8 @@ final class AlarmService: ObservableObject {
     func disarm() {
         sessionActive = false
         fallbackTask?.cancel(); fallbackTask = nil
-        stopRinging()
+        if alerting.isEmpty { stopRinging() }
+        else { tone.stop(fade: 0.3); isRinging = false }   // AlarmKit rinkelt nog: watch laten trillen
         armedFor = nil
         if smartFired { Task { await sync() } }        // herhalende wekker na slim wekken terugzetten
     }
@@ -357,6 +361,10 @@ final class AlarmService: ObservableObject {
                 if !started.isEmpty { DiagLog.shared.log("wekker", "GAAT AF (meting loopt: \(self.sessionActive))") }
                 if !stopped.isEmpty { DiagLog.shared.log("wekker", "uitgezet") }
                 if !started.isEmpty, self.sessionActive, self.settings.alarmVibrateWatch { self.startWatchNudges() }
+                if !started.subtracting(self.nonStoppingIDs).isEmpty, self.sessionActive {
+                    DiagLog.shared.log("wekker", "nacht wordt afgesloten zodat het wekkergeluid vrij baan heeft")
+                    self.onAlarmStarted?()
+                }
                 if !stopped.isEmpty {
                     self.nudgeTask?.cancel()
                     let realAlarms = stopped.subtracting(self.nonStoppingIDs)

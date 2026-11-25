@@ -32,6 +32,8 @@ final class SleepSession {
     @Relationship(deleteRule: .cascade, inverse: \OutOfBedEvent.session) var outOfBed: [OutOfBedEvent] = []
     var alarmNote: String?
     var pausesRaw: [Double] = []            // paren (start, einde) als timeIntervalSince1970
+    /// Gegevens uit Gezondheid (zuurstof, ademhaling, slaapfasen) zijn opgehaald.
+    var healthSynced: Bool = false
 
     init(start: Date = .now) {
         self.id = UUID()

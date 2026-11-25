@@ -191,6 +191,10 @@ final class AppleWatchProvider: NSObject, WearableProvider, WCSessionDelegate {
     private func handle(_ data: Data) {
         guard let msg = try? WatchMessage.decode(data) else { return }
         switch msg {
+        case .positionSample, .heartRate, .movement, .heartbeat: lastHeartbeat = .now   // watch meet nog
+        default: break
+        }
+        switch msg {
         case .positionSample(let p): subject.send(.position(p))
         case .heartRate(let bpm, let at): subject.send(.vital(.heartRate, bpm, at))
         case .movement(let i, let at): subject.send(.vital(.movement, i, at))

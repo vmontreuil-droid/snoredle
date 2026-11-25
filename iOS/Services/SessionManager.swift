@@ -28,6 +28,8 @@ final class SessionManager: ObservableObject {
     private var context: ModelContext?
     private var bag = Set<AnyCancellable>()
     private var delayTask: Task<Void, Never>?
+    /// Waakhond: komt er geen audio meer binnen, dan de microfoon herstarten.
+    private var micWatchdog: Timer?
 
     // Episode-toestand
     private var snoreStreak = 0
@@ -76,10 +78,17 @@ final class SessionManager: ObservableObject {
         detector.delegate = self
         let clips = self.clips          // audiothread: niet via MainActor-self gaan
         detector.onBuffer = { buffer, _ in clips.append(buffer) }
+        detector.onRestart = { [weak self] msg in
+            DiagLog.shared.log("microfoon", msg)
+            Task { @MainActor in self?.closeEpisode(at: .now); self?.clips.reset() }
+        }
         hub.events
             .sink { [weak self] source, event in self?.handleWearable(event, source: source) }
             .store(in: &bag)
         AlarmService.shared.onDismissed = { [weak self] in
+            Task { @MainActor in await self?.stop() }
+        }
+        AlarmService.shared.onAlarmStarted = { [weak self] in
             Task { @MainActor in await self?.stop() }
         }
         context = AppData.container.mainContext
@@ -186,6 +195,8 @@ final class SessionManager: ObservableObject {
         recentDb = []; noiseFloor = 30
         UIApplication.shared.isIdleTimerDisabled = false   // scherm mag uit; audio loopt door
 
+        // Eerst de nieuwe status klaarzetten, dan pas de watch starten (anders leest die een oude "gestopt").
+        hub.sendState(recording: true, pausedUntil: nil)
         hub.start(id: session.id, settings: settings.watchSettings)
 
         detector.calibrationOffset = settings.calibrationOffset
@@ -193,7 +204,16 @@ final class SessionManager: ObservableObject {
             lastError = "Microfoon kon niet starten: \(error.localizedDescription)"
             DiagLog.shared.log("nacht", "microfoon start mislukt: \(error.localizedDescription)")
             hub.stop(id: session.id)
-            context.delete(session); current = nil; return
+            context.delete(session); current = nil; broadcastState(); return
+        }
+
+        micWatchdog?.invalidate()
+        micWatchdog = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.current != nil, self.state != .finishing else { return }
+                let quiet = Date().timeIntervalSince(self.detector.lastBufferAt)
+                if quiet > 20 { self.detector.restart(reason: "\(Int(quiet)) s geen audio") }
+            }
         }
 
         Task { await AlarmService.shared.arm() }
@@ -218,7 +238,8 @@ final class SessionManager: ObservableObject {
     }
 
     func stop() async {
-        guard let session = current else { return }
+        // Niet twee keer tegelijk stoppen (bv. wekker gaat af én wordt meteen uitgezet).
+        guard let session = current, state != .finishing else { return }
         if isPaused { resume() }
         DiagLog.shared.log("nacht", "STOP · \(DiagLog.shared.summary) · episodes \(eventCount)")
         state = .finishing
@@ -227,26 +248,19 @@ final class SessionManager: ObservableObject {
         for kind in Array(soundTracks.keys) { closeSound(kind) }
         closeOutOfBed(force: true)
         flushMinute()
+        micWatchdog?.invalidate(); micWatchdog = nil
         detector.stop()
         AlarmService.shared.disarm()
         SleepSoundController.shared.stop(fade: 0.5)
         hub.stop(id: session.id)
         session.end = .now
 
-        if settings.useHealthKit {
-            let live = session.vitals.filter { $0.kind == .heartRate }.map(\.at)
-            for (kind, value, at, _) in await HealthKitService.shared.vitals(from: session.start, to: .now) {
-                if kind == .heartRate, live.contains(where: { abs($0.timeIntervalSince(at)) < 60 }) { continue }
-                session.vitals.append(VitalSample(at: at, kind: kind, value: value))
-            }
-        }
-        if settings.useHealthKit {
-            for (stage, a, b) in await HealthKitService.shared.stages(from: session.start.addingTimeInterval(-1800), to: .now) {
-                session.stages.append(SleepStageSample(start: a, end: b, stage: stage))
-            }
+        // Gezondheid is niet leesbaar als de iPhone vergrendeld is (bv. stop door de wekker);
+        // en de watch zet slaapfasen er pas na het ontwaken in. Dan later aanvullen (backfillHealth).
+        if settings.useHealthKit, UIApplication.shared.isProtectedDataAvailable {
+            await syncHealth(session)
         }
         session.alarmNote = AlarmService.shared.lastWakeReason
-        if settings.useHealthKit { await HealthKitService.shared.saveSleep(start: session.start, end: session.end ?? .now) }
         SnoreAnalysis.summarize(session)
         try? context?.save()
         LiveActivityService.shared.end(score: session.snoreScore)
@@ -259,6 +273,41 @@ final class SessionManager: ObservableObject {
         current = nil
         state = .idle
         broadcastState()
+    }
+
+    /// Haalt Gezondheid-gegevens op voor één nacht (één keer, of opnieuw als er nog geen slaapfasen waren).
+    private func syncHealth(_ session: SleepSession) async {
+        let end = session.end ?? .now
+        let hk = HealthKitService.shared
+        if !session.healthSynced {
+            let live = session.vitals.filter { $0.kind == .heartRate }.map(\.at)
+            for (kind, value, at, _) in await hk.vitals(from: session.start, to: end) {
+                if kind == .heartRate, live.contains(where: { abs($0.timeIntervalSince(at)) < 60 }) { continue }
+                session.vitals.append(VitalSample(at: at, kind: kind, value: value))
+            }
+            await hk.saveSleep(start: session.start, end: end)
+            session.healthSynced = true
+        }
+        if session.stages.isEmpty {
+            for (stage, a, b) in await hk.stages(from: session.start.addingTimeInterval(-1800), to: end.addingTimeInterval(1800)) {
+                session.stages.append(SleepStageSample(start: a, end: b, stage: stage))
+            }
+        }
+    }
+
+    /// Bij het openen van de app: recente nachten aanvullen met Gezondheid.
+    func backfillHealth() async {
+        guard settings.useHealthKit, state == .idle, let ctx = context,
+              UIApplication.shared.isProtectedDataAvailable else { return }
+        let since = Date().addingTimeInterval(-48 * 3600)
+        let recent = (try? ctx.fetch(FetchDescriptor<SleepSession>(predicate: #Predicate<SleepSession> { $0.start > since }))) ?? []
+        var changed = false
+        for s in recent where s.end != nil && (!s.healthSynced || s.stages.isEmpty) {
+            let before = (s.vitals.count, s.stages.count, s.healthSynced)
+            await syncHealth(s)
+            if (s.vitals.count, s.stages.count, s.healthSynced) != before { changed = true }
+        }
+        if changed { try? ctx.save(); DiagLog.shared.log("gezondheid", "nachten aangevuld met Gezondheid") }
     }
 
     /// Automatisch stoppen op het ingestelde uur.
@@ -363,7 +412,6 @@ final class SessionManager: ObservableObject {
     private func resetEpisode() {
         episodeStart = nil; episodeClip = nil; episodePeak = 0
         episodeConfidence = []; snoreStreak = 0; isSnoring = false
-        episodeNudges = 0
     }
 
     // MARK: Nachtgeluiden
@@ -427,9 +475,12 @@ final class SessionManager: ObservableObject {
         guard now.timeIntervalSince(session.start) > Double(settings.nudgeQuietFirstMinutes * 60) else { return skip("eerste \(settings.nudgeQuietFirstMinutes) min") }
         if settings.nudgeOnlyOnBack, currentPosition != .back, currentPosition != .unknown { return skip("houding \(currentPosition.label)") }
         if watchOn { hub.nudge(settings.nudgeIntensity) }
+        // Luider worden zolang je blijft snurken (ook als het geluid zelf de snurkperiode even onderbreekt).
+        if now.timeIntervalSince(lastNudge) > settings.nudgeCooldownMinutes * 60 + 180 { episodeNudges = 0 }
         if soundOn {
             let r = NudgeSoundPlayer.shared.play(level: episodeNudges)
-            DiagLog.shared.log("tikje", "geluid: \(r)")
+            DiagLog.shared.log("tikje", "geluid (niveau \(episodeNudges + 1)): \(r)")
+            if !r.hasPrefix("FOUT") { episodeNudged = true }     // telt mee als "gewekt" in het rapport
         }
         episodeNudges += 1
         DiagLog.shared.nudgeRequested("houding \(currentPosition.label), snurkt \(Int(now.timeIntervalSince(start))) s")

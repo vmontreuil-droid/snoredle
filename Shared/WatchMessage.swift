@@ -106,7 +106,8 @@ public struct CalibrationProfile: Codable, Sendable, Hashable {
     public func classify(_ gravity: Vector3) -> (SleepPosition, Double) {
         // Arm verticaal (zwaartekracht langs y) → waarschijnlijk rechtop/wakker.
         if abs(gravity.normalized.y) > 0.85 { return (.upright, abs(gravity.normalized.y)) }
-        let source = isComplete ? vectors : CalibrationProfile.default.vectors
+        // Gedeeltelijk gekalibreerd: eigen houdingen gebruiken, de rest aanvullen met standaardwaarden.
+        let source = isComplete ? vectors : CalibrationProfile.default.vectors.merging(vectors) { _, own in own }
         let ranked = source.map { ($0.key, gravity.angle(to: $0.value)) }.sorted { $0.1 < $1.1 }
         guard let best = ranked.first else { return (.unknown, 0) }
         let second = ranked.dropFirst().first?.1 ?? 180

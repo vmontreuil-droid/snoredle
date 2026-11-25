@@ -37,17 +37,42 @@ final class SnoreDetector: NSObject {
     static let interferingLabels = ["speech", "cough", "television", "music", "dog_bark", "cat_meow",
                                     "baby_crying", "fan", "air_conditioner", "rain", "vehicle"]
 
+    private var running = false
+    /// Laatste keer dat er audio binnenkwam (voor de waakhond in SessionManager).
+    private(set) var lastBufferAt = Date()
+    /// Wordt opgeroepen als de detector zichzelf herstart heeft (reden voor het logboek).
+    var onRestart: ((String) -> Void)?
+
     func start() throws {
         let session = AVAudioSession.sharedInstance()
         // .default i.p.v. .measurement: in meetmodus speelt de speaker veel stiller af.
+        // Geen .allowBluetooth: anders neemt een headset (AirPods) de microfoon over.
         try session.setCategory(.playAndRecord, mode: .default,
-                                options: [.mixWithOthers, .allowBluetooth, .defaultToSpeaker])
+                                options: [.mixWithOthers, .defaultToSpeaker, .allowBluetoothA2DP])
         try session.setActive(true)
+        try startEngine()
+        running = true
 
+        let nc = NotificationCenter.default
+        nc.removeObserver(self)
+        nc.addObserver(self, selector: #selector(handleInterruption(_:)),
+                       name: AVAudioSession.interruptionNotification, object: nil)
+        nc.addObserver(self, selector: #selector(handleConfigChange(_:)),
+                       name: .AVAudioEngineConfigurationChange, object: engine)
+        nc.addObserver(self, selector: #selector(handleMediaReset(_:)),
+                       name: AVAudioSession.mediaServicesWereResetNotification, object: nil)
+    }
+
+    /// Tap + analyse (opnieuw) opzetten met het huidige formaat van de microfoon.
+    private func startEngine() throws {
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0 else {
+            throw NSError(domain: "Snoredle", code: 1, userInfo: [NSLocalizedDescriptionKey: "Geen microfoon beschikbaar"])
+        }
         self.format = format
 
+        analyzer?.completeAnalysis()
         let analyzer = SNAudioStreamAnalyzer(format: format)
         let request = try SNClassifySoundRequest(classifierIdentifier: .version1)
         request.windowDuration = CMTime(seconds: 1.5, preferredTimescale: 48_000)
@@ -58,6 +83,7 @@ final class SnoreDetector: NSObject {
         input.removeTap(onBus: 0)
         input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, time in
             guard let self else { return }
+            self.lastBufferAt = Date()
             self.lastDecibel = self.decibel(of: buffer)
             self.onBuffer?(buffer, time)
             self.analysisQueue.async {
@@ -66,28 +92,54 @@ final class SnoreDetector: NSObject {
         }
         engine.prepare()
         try engine.start()
+        lastBufferAt = Date()
+    }
 
-        NotificationCenter.default.addObserver(self, selector: #selector(handleInterruption(_:)),
-                                               name: AVAudioSession.interruptionNotification, object: nil)
+    /// Volledig herstarten (na onderbreking, routewissel, of als de waakhond niets meer hoort).
+    private var lastRestart = Date.distantPast
+    func restart(reason: String) {
+        guard running, Date().timeIntervalSince(lastRestart) > 3 else { return }
+        lastRestart = Date()
+        engine.stop()
+        do {
+            try AVAudioSession.sharedInstance().setActive(true)
+            try startEngine()
+            onRestart?("\(reason) → herstart gelukt")
+        } catch {
+            onRestart?("\(reason) → herstart MISLUKT: \(error.localizedDescription)")
+        }
     }
 
     func stop() {
+        running = false
+        NotificationCenter.default.removeObserver(self)
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         analyzer?.completeAnalysis()
         analyzer = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        NotificationCenter.default.removeObserver(self)
     }
 
-    /// Telefoongesprek, Siri… → na afloop automatisch hervatten.
+    /// Telefoongesprek, Siri, wekker… → na afloop automatisch hervatten.
     @objc private func handleInterruption(_ note: Notification) {
         guard let info = note.userInfo,
               let raw = info[AVAudioSessionInterruptionTypeKey] as? UInt,
               let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
-        if type == .ended {
-            try? AVAudioSession.sharedInstance().setActive(true)
-            try? engine.start()
+        if type == .began { onRestart?("onderbroken (bv. oproep of wekker)") }
+        if type == .ended { DispatchQueue.main.async { self.restart(reason: "onderbreking voorbij") } }
+    }
+
+    /// Andere audioroute (koptelefoon, Bluetooth, ander formaat): tap opnieuw installeren.
+    @objc private func handleConfigChange(_ note: Notification) {
+        DispatchQueue.main.async { self.restart(reason: "audioroute gewijzigd") }
+    }
+
+    @objc private func handleMediaReset(_ note: Notification) {
+        DispatchQueue.main.async {
+            guard self.running else { return }
+            try? AVAudioSession.sharedInstance().setCategory(.playAndRecord, mode: .default,
+                                                             options: [.mixWithOthers, .defaultToSpeaker, .allowBluetoothA2DP])
+            self.restart(reason: "audiosysteem herstart")
         }
     }
 

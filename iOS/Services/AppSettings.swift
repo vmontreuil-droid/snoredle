@@ -40,7 +40,7 @@ final class AppSettings: ObservableObject {
     @AppStorage("smartWindowMinutes") var smartWindowMinutes: Int = 20   // 0 = gewone wekker
     @AppStorage("snoozeMinutes") var snoozeMinutes: Int = 9
     @AppStorage("alarmVibrateWatch") var alarmVibrateWatch: Bool = true
-    @AppStorage("smartWakeMovementThreshold") var smartWakeMovementThreshold: Double = 1.5
+    @AppStorage("smartWakeMovementThreshold") var smartWakeMovementThreshold: Double = 1.0
 
     // Doelen en meldingen
     @AppStorage("sleepGoalHours") var sleepGoalHours: Double = 7.5

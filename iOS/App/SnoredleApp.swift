@@ -51,7 +51,10 @@ struct SnoredleApp: App {
                 }
                 .tint(Theme.accent)
                 .preferredColorScheme(.dark)
-                .onChange(of: scenePhase) { _, p in lock.scenePhaseChanged(p) }
+                .onChange(of: scenePhase) { _, p in
+                    lock.scenePhaseChanged(p)
+                    if p == .active { Task { await manager.backfillHealth() } }
+                }
         }
         .modelContainer(container)
     }

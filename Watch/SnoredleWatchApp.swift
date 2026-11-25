@@ -22,7 +22,11 @@ struct SnoredleWatchApp: App {
 
 /// Wordt gestart door de iPhone via `HKHealthStore.startWatchApp`.
 final class WatchAppDelegate: NSObject, WKApplicationDelegate {
+    /// Ook bij een start op de achtergrond (zonder scherm) meteen de verbinding opzetten.
+    func applicationDidFinishLaunching() { _ = WatchConnector.shared }
+
     func handle(_ workoutConfiguration: HKWorkoutConfiguration) {
+        _ = WatchConnector.shared
         Task { @MainActor in
             // Begin meteen; de instellingen volgen via het startSession-bericht.
             NightTracker.shared.start(id: UUID(), settings: WatchSettings())
