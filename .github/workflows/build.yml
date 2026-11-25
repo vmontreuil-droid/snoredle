@@ -110,3 +110,27 @@ jobs:
       - name: Eigen tijdelijk certificaat opruimen
         if: always()
         run: python3 ci/asc_certs.py "$ASC_KEY_ID" "$ASC_ISSUER_ID" ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 || true
+
+  crashlog:
+    name: Crashrapporten ophalen
+    if: contains(github.event.head_commit.message, '[crashlog]')
+    runs-on: ubuntu-latest
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Ophalen
+        env:
+          P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          pip install pyjwt cryptography >/dev/null
+          python3 - <<'PY'
+          import os, re
+          raw = os.environ["P8"]
+          body = re.sub(r"-----(BEGIN|END)[^-]*-----", "", raw)
+          body = re.sub(r"[^A-Za-z0-9+/=]", "", body)
+          lines = [body[i:i+64] for i in range(0, len(body), 64)]
+          open("/tmp/key.p8", "w").write("-----BEGIN PRIVATE KEY-----\n" + "\n".join(lines) + "\n-----END PRIVATE KEY-----\n")
+          PY
+          python3 ci/asc_crashes.py "$ASC_KEY_ID" "$ASC_ISSUER_ID" /tmp/key.p8
