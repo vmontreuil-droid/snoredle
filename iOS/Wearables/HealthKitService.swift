@@ -104,7 +104,20 @@ final class HealthKitService {
             predicates: [.categorySample(type: HKCategoryType(.sleepAnalysis), predicate: predicate)],
             sortDescriptors: [SortDescriptor(\.startDate)])
         guard let samples = try? await descriptor.result(for: store) else { return [] }
-        return samples.compactMap { s in
+        // Niet onze eigen "in bed"-regel terug inlezen, en maar één bron gebruiken
+        // (anders tellen watch + een andere slaapapp dubbel). Voorkeur: de bron met echte fasen.
+        let own = HKSource.default().bundleIdentifier
+        let others = samples.filter { $0.sourceRevision.source.bundleIdentifier != own }
+        let bySource = Dictionary(grouping: others, by: { $0.sourceRevision.source.bundleIdentifier })
+        let staged: Set<Int> = [HKCategoryValueSleepAnalysis.asleepREM.rawValue,
+                                HKCategoryValueSleepAnalysis.asleepCore.rawValue,
+                                HKCategoryValueSleepAnalysis.asleepDeep.rawValue]
+        func weight(_ xs: [HKCategorySample]) -> (Double, Double) {
+            let d = { (x: HKCategorySample) in x.endDate.timeIntervalSince(x.startDate) }
+            return (xs.filter { staged.contains($0.value) }.map(d).reduce(0, +), xs.map(d).reduce(0, +))
+        }
+        guard let best = bySource.values.max(by: { weight($0) < weight($1) }) else { return [] }
+        return best.compactMap { s in
             guard let v = HKCategoryValueSleepAnalysis(rawValue: s.value) else { return nil }
             return (v, DateInterval(start: s.startDate, end: s.endDate))
         }

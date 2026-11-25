@@ -296,9 +296,12 @@ final class SessionManager: ObservableObject {
             await hk.saveSleep(start: session.start, end: end)
             session.healthSynced = true
         }
-        if session.stages.isEmpty {
-            for (stage, a, b) in await hk.stages(from: session.start.addingTimeInterval(-1800), to: end.addingTimeInterval(1800)) {
-                session.stages.append(SleepStageSample(start: a, end: b, stage: stage))
+        // Echte slaapfasen (niet enkel "in bed") komen soms pas later: dan opnieuw ophalen en vervangen.
+        if !session.stages.contains(where: { $0.stage != .inBed }) {
+            let fetched = await hk.stages(from: session.start.addingTimeInterval(-1800), to: end.addingTimeInterval(1800))
+            if fetched.contains(where: { $0.0 != .inBed }) || session.stages.isEmpty {
+                session.stages.forEach { context?.delete($0) }
+                session.stages = fetched.map { SleepStageSample(start: $0.1, end: $0.2, stage: $0.0) }
             }
         }
     }
@@ -310,7 +313,7 @@ final class SessionManager: ObservableObject {
         let since = Date().addingTimeInterval(-48 * 3600)
         let recent = (try? ctx.fetch(FetchDescriptor<SleepSession>(predicate: #Predicate<SleepSession> { $0.start > since }))) ?? []
         var changed = false
-        for s in recent where s.end != nil && (!s.healthSynced || s.stages.isEmpty) {
+        for s in recent where s.end != nil && (!s.healthSynced || !s.stages.contains(where: { $0.stage != .inBed })) {
             let before = (s.vitals.count, s.stages.count, s.healthSynced)
             await syncHealth(s)
             if (s.vitals.count, s.stages.count, s.healthSynced) != before { changed = true }
@@ -341,7 +344,8 @@ final class SessionManager: ObservableObject {
         guard state == .recording else { return }
         checkAutoStop()
         // Tijdens slaapgeluiden niet meten: de microfoon hoort dan vooral de speaker.
-        if SleepSoundController.shared.isPlaying { return }
+        // Maar nooit langer dan een uur (bij "Nooit" zou anders de hele nacht niet gemeten worden).
+        if SleepSoundController.shared.isPlaying, SleepSoundController.shared.playingFor < 3600 { return }
         // Ons eigen geluid (belletje, stem "Draai je even om") niet als praten/geluid in je slaap tellen.
         let ownSound = f.at.timeIntervalSince(lastNudge) < 12
         if settings.detectNightSounds, !ownSound { trackNightSounds(f) }

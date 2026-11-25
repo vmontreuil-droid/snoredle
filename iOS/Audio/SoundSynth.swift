@@ -125,7 +125,7 @@ private final class SynthState {
 final class SoundSynth {
     /// Rendert een geluid naar een bestand (voor AVAudioPlayer: betrouwbaar op de achtergrond).
     static func renderFile(_ sound: SynthSound, seconds: Double) -> URL? {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("synth-\(sound.rawValue)-\(Int(seconds * 10)).caf")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("synth2-\(sound.rawValue)-\(Int(seconds * 10)).caf")
         if FileManager.default.fileExists(atPath: url.path) { return url }
         let rate = 44_100.0
         guard let format = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 1),
@@ -139,7 +139,7 @@ final class SoundSynth {
             var v = st.sample()
             if i < fade { v *= Float(i) / Float(fade) }
             if i > n - fade { v *= Float(n - i) / Float(fade) }
-            ptr[i] = max(-1, min(1, v * 1.6))       // zo luid mogelijk zonder te vervormen
+            ptr[i] = tanhf(v * 1.6) / tanhf(1.6) * 0.98       // luid, zacht begrensd (geen harde vervorming)
         }
         buf.frameLength = AVAudioFrameCount(n)
         do {
@@ -233,6 +233,8 @@ final class SleepSoundController: ObservableObject {
     private var timerTask: Task<Void, Never>?
 
     var untilAsleep: Bool { timerMinutes == -1 }
+    /// Speelt al zo lang (voor de meting: na een uur toch meten, ook bij "Nooit").
+    var playingFor: TimeInterval { isPlaying ? Date().timeIntervalSince(startedAt) : 0 }
 
     /// Beweging van de watch (per 10 s genormaliseerd). Groter dan 1 = je beweegt nog.
     func noteMovement(_ v: Double) {
@@ -357,7 +359,7 @@ struct SleepSoundsSheet: View {
                     if let n = c.asleepNote { Text(n).font(.caption).foregroundStyle(.green) }
                     Button("Test slim inslapen (stopt na 1 min stilliggen)") { c.testSmartSleep() }
                         .font(.footnote)
-                    Text("Tijdens het geluid meet Snoredle geen snurken. Daarna faden de geluiden rustig uit en begint de meting.")
+                    Text("Het eerste uur met geluid meet Snoredle geen snurken (de microfoon hoort vooral de speaker). Speelt het langer (\u{201C}Nooit\u{201D}), dan meet hij daarna toch, maar minder nauwkeurig.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
 

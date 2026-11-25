@@ -42,6 +42,7 @@ final class NightTracker: NSObject, ObservableObject {
     private var phoneWasReachable = true
     fileprivate var lastHRSent = Date.distantPast
     fileprivate var heartbeatFailures = 0
+    private var workoutRestarts = 0
 
     // MARK: Sessie
 
@@ -51,6 +52,7 @@ final class NightTracker: NSObject, ObservableObject {
         sessionID = id
         isTracking = true
         trackingSince = .now
+        workoutRestarts = 0; heartbeatFailures = 0
         startWorkout()
         startMotion()
         remoteLog("meting op watch gestart (elke \(Int(settings.sampleIntervalSeconds)) s een seintje)")
@@ -110,6 +112,11 @@ final class NightTracker: NSObject, ObservableObject {
         remoteLog("nachtsessie gestopt door watchOS (\(reason))")
         guard isTracking else { return }
         workout = nil; builder = nil
+        workoutRestarts += 1
+        guard workoutRestarts <= 5 else {
+            remoteLog("nachtsessie blijft falen → niet meer herstarten (open Snoredle op je watch en sta Gezondheid toe)")
+            return
+        }
         Task {
             try? await Task.sleep(for: .seconds(2))
             guard self.isTracking, self.workout == nil else { return }

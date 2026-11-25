@@ -27,14 +27,14 @@ struct HistoryView: View {
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
-                            if let r = s.rating { Text(["😫", "🙁", "😐", "🙂", "😄"][r - 1]) }
+                            if let r = s.rating, (1...5).contains(r) { Text(["😫", "🙁", "😐", "🙂", "😄"][r - 1]) }
                         }
                     }
                 }
                 .onDelete { idx in
                     for i in idx {
                         let s = visible[i]
-                        s.events.compactMap(\.clipFileName).forEach {
+                        (s.events.compactMap(\.clipFileName) + s.nightSounds.compactMap(\.clipFileName)).forEach {
                             try? FileManager.default.removeItem(at: ClipRecorder.url(for: $0))
                         }
                         context.delete(s)

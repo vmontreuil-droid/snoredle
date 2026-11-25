@@ -174,7 +174,9 @@ struct SessionDetailView: View {
         let samples = session.positions.sorted { $0.at < $1.at }
         return VStack(alignment: .leading, spacing: 12) {
             Chart(Array(samples.enumerated()), id: \.offset) { i, p in
-                let end = i + 1 < samples.count ? samples[i + 1].at : (session.end ?? .now)
+                // Hoogstens 10 min doortrekken (watch stuurt minstens om de 5 min): een gat blijft een gat.
+                let next = i + 1 < samples.count ? samples[i + 1].at : (session.end ?? .now)
+                let end = min(next, p.at.addingTimeInterval(600))
                 BarMark(xStart: .value("Start", p.at), xEnd: .value("Einde", end), y: .value("", "Houding"))
                     .foregroundStyle(Theme.color(p.position))
             }
