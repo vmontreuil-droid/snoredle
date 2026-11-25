@@ -18,6 +18,7 @@ enum BackupService {
         var factors: [String]; var remedies: [String]; var pauses: [Double]
         var events: [E]; var loudness: [L]; var positions: [P]; var vitals: [V]; var sounds: [N]; var stages: [T]
         var outOfBed: [O]? = nil
+        var apnea: Int? = nil; var wearable: String? = nil; var alarmNote: String? = nil
     }
     struct E: Codable { var start: Date; var end: Date; var intensity: Int; var peak: Double; var conf: Double; var pos: String; var nudged: Bool; var partner: Bool }
     struct L: Codable { var at: Date; var db: Double; var p: Double }
@@ -39,7 +40,8 @@ enum BackupService {
               vitals: s.vitals.map { V(at: $0.at, kind: $0.kindRaw, value: $0.value) },
               sounds: s.nightSounds.map { N(start: $0.start, end: $0.end, kind: $0.kindRaw, conf: $0.confidence, transcript: $0.transcript) },
               stages: s.stages.map { T(start: $0.start, end: $0.end, stage: $0.stageRaw) },
-              outOfBed: s.outOfBed.map { O(start: $0.start, end: $0.end, steps: $0.steps, alerted: $0.alerted) })
+              outOfBed: s.outOfBed.map { O(start: $0.start, end: $0.end, steps: $0.steps, alerted: $0.alerted) },
+              apnea: s.possibleApneaEvents, wearable: s.wearableName, alarmNote: s.alarmNote)
         })
         let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
         let name = "Snoredle-backup-\(Date().formatted(.iso8601.year().month().day())).json"
@@ -60,6 +62,8 @@ enum BackupService {
             let s = SleepSession(start: x.start)
             s.id = x.id; s.end = x.end; s.note = x.note; s.rating = x.rating
             s.factorsRaw = x.factors; s.remediesRaw = x.remedies; s.pausesRaw = x.pauses
+            s.possibleApneaEvents = x.apnea ?? 0; s.wearableName = x.wearable; s.alarmNote = x.alarmNote
+            s.healthSynced = true          // niet opnieuw naar Gezondheid schrijven
             context.insert(s)
             for e in x.events {
                 let ev = SnoreEvent(start: e.start, end: e.end, intensity: SnoreIntensity(rawValue: e.intensity) ?? .light,

@@ -40,6 +40,7 @@ final class NightTracker: NSObject, ObservableObject {
     private var lastSentPosition: SleepPosition?
     private var lastSentAt = Date.distantPast
     private var phoneWasReachable = true
+    fileprivate var lastHRSent = Date.distantPast
 
     // MARK: Sessie
 
@@ -379,6 +380,9 @@ extension NightTracker: HKLiveWorkoutBuilderDelegate {
         let bpm = q.doubleValue(for: .count().unitDivided(by: .minute()))
         Task { @MainActor in
             self.heartRate = bpm
+            // Hoogstens om de 30 s doorsturen (batterij; de watch meet soms elke paar seconden).
+            guard Date().timeIntervalSince(self.lastHRSent) >= 30 else { return }
+            self.lastHRSent = .now
             self.send(.heartRate(bpm: bpm, at: .now))
         }
     }

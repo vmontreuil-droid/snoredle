@@ -350,10 +350,11 @@ final class SessionManager: ObservableObject {
             }
         }
 
+        trackBreathingPause(f, snoring: snoring)
+
         if snoring {
             snoreStreak += 1
             lastSnoreFrame = f.at
-            silentSince = nil
             if episodeStart == nil, snoreStreak >= 2 { openEpisode(at: f.at) }
             if episodeStart != nil {
                 episodePeak = max(episodePeak, f.decibel)
@@ -362,12 +363,8 @@ final class SessionManager: ObservableObject {
             }
         } else {
             snoreStreak = 0
-            if episodeStart != nil {
-                if f.decibel < noiseFloor + 2 { silentSince = silentSince ?? f.at }
-                if let last = lastSnoreFrame, f.at.timeIntervalSince(last) > 6 {
-                    detectPause(now: f.at)
-                    closeEpisode(at: last)
-                }
+            if episodeStart != nil, let last = lastSnoreFrame, f.at.timeIntervalSince(last) > 6 {
+                closeEpisode(at: last)
             }
         }
     }
@@ -454,11 +451,26 @@ final class SessionManager: ObservableObject {
         }
     }
 
-    /// Snurken → stilte ≥ drempel → markeer mogelijke ademstop. GEEN diagnose.
-    private func detectPause(now: Date) {
-        guard settings.pauseDetection, let s = silentSince, let session = current else { return }
-        if now.timeIntervalSince(s) >= settings.pauseThresholdSeconds { session.possibleApneaEvents += 1 }
-        silentSince = nil
+    /// Snurken → stilte ≥ drempel → snurken gaat verder: mogelijke ademstop. GEEN diagnose.
+    /// Los van de snurkperiodes, want die worden na 6 s stilte al afgesloten.
+    private func trackBreathingPause(_ f: AudioFrame, snoring: Bool) {
+        guard settings.pauseDetection, let session = current else { return }
+        if snoring {
+            if let q = silentSince {
+                let gap = f.at.timeIntervalSince(q)
+                if gap >= settings.pauseThresholdSeconds && gap <= 90 {
+                    session.possibleApneaEvents += 1
+                    DiagLog.shared.log("adem", "mogelijke ademstop: \(Int(gap)) s stil tussen snurken (#\(session.possibleApneaEvents))")
+                }
+            }
+            silentSince = nil
+        } else if f.decibel < noiseFloor + 2 {
+            // Stilte telt alleen als ze vlak na snurken begint.
+            if silentSince == nil, let last = lastSnoreFrame, f.at.timeIntervalSince(last) < 3 { silentSince = f.at }
+        } else if f.snoreConfidence < 0.2 {
+            silentSince = nil           // ander geluid (bewegen, praten): geen stilte
+        }
+        if let q = silentSince, f.at.timeIntervalSince(q) > 90 { silentSince = nil }   // gewoon stil geworden
     }
 
     private func maybeNudge(now: Date) {

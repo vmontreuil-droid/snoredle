@@ -8,7 +8,7 @@ final class StoreManager: ObservableObject {
     static let productIDs = ["be.snoredle.plus.monthly", "be.snoredle.plus.yearly", "be.snoredle.plus.lifetime"]
 
     @Published private(set) var products: [Product] = []
-    @Published private(set) var isPlus = false
+    @Published private(set) var isPlus = StoreManager.isTestFlight   // meteen, niet pas na laden
     private var updates: Task<Void, Never>?
 
     /// Wat zit er in Plus?

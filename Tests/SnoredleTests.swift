@@ -90,4 +90,27 @@ final class NieuweFunctiesTests: XCTestCase {
         else { return XCTFail() }
         XCTAssertEqual(m, 30)
     }
+
+    func testPartialCalibrationUsesOwnVector() {
+        // Alleen "links" gekalibreerd op een ongewone plek: die moet toch herkend worden.
+        let own = Vector3(x: 0.7, y: 0.1, z: 0.7).normalized
+        let p = CalibrationProfile(vectors: [.left: own])
+        XCTAssertFalse(p.isComplete)
+        XCTAssertEqual(p.classify(own).0, .left)
+    }
+
+    func testLogMessageRoundTrip() throws {
+        guard case .log(let t) = try WatchMessage.decode(WatchMessage.log("test").encoded()) else { return XCTFail() }
+        XCTAssertEqual(t, "test")
+    }
+
+    func testAlarmNextWeekdays() {
+        var item = AlarmItem(minutes: 6 * 60, days: [2, 3, 4, 5, 6])
+        item.enabled = true
+        var c = DateComponents(); c.year = 2026; c.month = 11; c.day = 27; c.hour = 7   // vrijdag 7u
+        let fri = Calendar.current.date(from: c)!
+        let next = item.next(after: fri)!
+        XCTAssertEqual(Calendar.current.component(.weekday, from: next), 2)            // maandag
+        XCTAssertEqual(Calendar.current.component(.hour, from: next), 6)
+    }
 }
