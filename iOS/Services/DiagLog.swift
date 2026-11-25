@@ -61,6 +61,8 @@ final class DiagLog: @unchecked Sendable {
 /// Diagnose-scherm in Instellingen.
 struct DiagnoseView: View {
     @State private var content = ""
+    @State private var watchText = ""
+    @State private var launchResult: String?
     private var version: String {
         let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
         let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
@@ -71,6 +73,18 @@ struct DiagnoseView: View {
         List {
             Section("Versie") { Text(version).monospacedDigit() }
             Section("Deze/vorige nacht") { Text(DiagLog.shared.summary).font(.footnote) }
+            Section {
+                Text(watchText).font(.footnote)
+                Button("Test: start Snoredle op watch") {
+                    Task {
+                        launchResult = await WearableHub.shared.appleWatch?.testLaunch() ?? "Geen Apple Watch-verbinding"
+                        watchText = WearableHub.shared.appleWatch?.diagnosticsText ?? ""
+                    }
+                }
+                if let launchResult { Text(launchResult).font(.footnote).foregroundStyle(.secondary) }
+            } header: { Text("Apple Watch") } footer: {
+                Text("Mediavolume iPhone nu: \(Int(NudgeSoundPlayer.systemVolume * 100))%")
+            }
             Section {
                 ShareLink(item: DiagLog.shared.url) { Label("Logboek delen", systemImage: "square.and.arrow.up") }
                 Button("Logboek wissen", role: .destructive) { DiagLog.shared.clear(); content = "(leeg)" }
@@ -84,6 +98,9 @@ struct DiagnoseView: View {
             }
         }
         .navigationTitle("Diagnose")
-        .onAppear { content = DiagLog.shared.text() }
+        .onAppear {
+            content = DiagLog.shared.text()
+            watchText = WearableHub.shared.appleWatch?.diagnosticsText ?? "Geen Apple Watch-verbinding"
+        }
     }
 }

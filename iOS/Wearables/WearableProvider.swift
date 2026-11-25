@@ -79,6 +79,7 @@ final class WearableHub: ObservableObject {
         providers.compactMap { ($0 as? AppleWatchProvider)?.statusHint }.first
     }
     var watchReachable: Bool { providers.contains { ($0 as? AppleWatchProvider)?.isReachable == true } }
+    var appleWatch: AppleWatchProvider? { providers.compactMap { $0 as? AppleWatchProvider }.first }
     /// Er komen nu echt seintjes van de watch binnen.
     var watchLive: Bool { providers.contains { ($0 as? AppleWatchProvider)?.isLive == true } }
     var hasHaptics: Bool { active.contains { $0.capabilities.contains(.haptics) } }

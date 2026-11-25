@@ -230,6 +230,27 @@ final class AppleWatchProvider: NSObject, WearableProvider, WCSessionDelegate {
 
     var isReachable: Bool { session?.isReachable ?? false }
 
+    /// Overzicht voor het diagnosescherm.
+    var diagnosticsText: String {
+        guard let s = session else { return "Geen WatchConnectivity op dit toestel" }
+        let last = lastHeartbeat == .distantPast ? "nog nooit" : lastHeartbeat.formatted(date: .omitted, time: .standard)
+        return "Verbinding: \(s.activationState == .activated ? "actief" : "niet actief") · gekoppeld: \(s.isPaired ? "ja" : "nee") · app op watch: \(s.isWatchAppInstalled ? "ja" : "nee") · nu bereikbaar: \(s.isReachable ? "ja" : "nee") · laatste seintje: \(last)"
+    }
+
+    /// Test: start de watch-app zoals 's nachts (via een workout) en meldt het resultaat.
+    func testLaunch() async -> String {
+        let config = HKWorkoutConfiguration()
+        config.activityType = .mindAndBody
+        config.locationType = .indoor
+        return await withCheckedContinuation { cont in
+            HKHealthStore().startWatchApp(with: config) { ok, error in
+                DiagLog.shared.log("watch", "TEST watch-app starten: \(ok ? "gelukt" : "mislukt") \(error?.localizedDescription ?? "")")
+                cont.resume(returning: ok ? "Gelukt ✓ – Snoredle zou nu op je watch moeten openen."
+                                          : "Mislukt: \(error?.localizedDescription ?? "onbekende fout"). Open Snoredle één keer zelf op je watch en geef toestemming voor Gezondheid.")
+            }
+        }
+    }
+
     /// Korte uitleg voor op het startscherm.
     var statusHint: String? {
         guard let s = session else { return "Deze iPhone ondersteunt geen Apple Watch" }
