@@ -258,8 +258,8 @@ final class SessionManager: ObservableObject {
         closeOutOfBed(force: true)
         flushMinute()
         micWatchdog?.invalidate(); micWatchdog = nil
+        SilentKeepAlive.shared.stop()      // eerst: anders kan de audiosessie niet uit
         detector.stop()
-        SilentKeepAlive.shared.stop()
         AlarmService.shared.disarm()
         SleepSoundController.shared.stop(fade: 0.5)
         hub.stop(id: session.id)
@@ -605,6 +605,23 @@ final class SessionManager: ObservableObject {
 
     private func handleWearable(_ e: WearableEvent, source: String) {
         guard let session = current else { return }
+        // Gebufferde gegevens van een vórige nacht (komen binnen als de watch opnieuw verbindt)
+        // horen niet bij deze nacht. Stappen/rechtop/beweging zijn alleen "live" bruikbaar.
+        let stamp: Date? = {
+            switch e {
+            case .position(let p): p.at
+            case .vital(_, _, let at), .steps(_, let at), .upright(_, let at): at
+            default: nil
+            }
+        }()
+        if let t = stamp {
+            if t < session.start.addingTimeInterval(-60) { return }
+            switch e {
+            case .steps, .upright, .vital(.movement, _, _):
+                if Date().timeIntervalSince(t) > 120 { return }      // te oud voor uit-bed/slim wekken
+            default: break
+            }
+        }
         switch e {
         case .position(let p):
             if p.position != currentPosition, p.at >= positionAt {
