@@ -59,7 +59,12 @@ final class SessionManager: ObservableObject {
     // Ademstop-heuristiek
     private var silentSince: Date?
 
-    private var currentPosition: SleepPosition = .unknown
+    private var knownPosition: SleepPosition = .unknown
+    private var positionAt = Date.distantPast
+    /// Houding is maar geldig als de watch ze recent doorgaf (die stuurt minstens om de 5 min).
+    private var currentPosition: SleepPosition {
+        Date().timeIntervalSince(positionAt) < 12 * 60 ? knownPosition : .unknown
+    }
 
     // Uit bed (toilet / slaapwandelen)
     private var recentSteps: [(Date, Int)] = []
@@ -188,6 +193,9 @@ final class SessionManager: ObservableObject {
         context.insert(session)
         current = session
         resetEpisode(); clipsThisNight = 0; eventCount = 0
+        // Niets van de vorige nacht meenemen.
+        knownPosition = .unknown; positionAt = .distantPast
+        lastNudge = .distantPast; episodeNudges = 0; silentSince = nil; restlessStreak = 0; lastSnoreFrame = nil
         soundTracks = [:]; nightSoundCount = 0
         recentSteps = []; uprightNow = false; outStart = nil; outSteps = 0; outAlerted = false
         // Minuut-teller opnieuw starten, anders krijgt het eerste meetpunt een oud tijdstip.
@@ -334,7 +342,9 @@ final class SessionManager: ObservableObject {
         checkAutoStop()
         // Tijdens slaapgeluiden niet meten: de microfoon hoort dan vooral de speaker.
         if SleepSoundController.shared.isPlaying { return }
-        if settings.detectNightSounds { trackNightSounds(f) }
+        // Ons eigen geluid (belletje, stem "Draai je even om") niet als praten/geluid in je slaap tellen.
+        let ownSound = f.at.timeIntervalSince(lastNudge) < 12
+        if settings.detectNightSounds, !ownSound { trackNightSounds(f) }
 
         let interfering = settings.ignoreSpeech && (f.otherSounds["speech"] ?? 0) > f.snoreConfidence
         let loudEnough = f.decibel > noiseFloor + 3
@@ -570,11 +580,12 @@ final class SessionManager: ObservableObject {
         guard let session = current else { return }
         switch e {
         case .position(let p):
-            if p.position != currentPosition {
+            if p.position != currentPosition, p.at >= positionAt {
                 LiveActivityService.shared.update(snoreEvents: eventCount, isSnoring: isSnoring,
                                                   position: p.position, nightSounds: nightSoundCount)
             }
-            currentPosition = p.position
+            // Late (gebufferde) metingen niet als "nu" laten gelden.
+            if p.at >= positionAt { knownPosition = p.position; positionAt = p.at }
             session.positions.append(PositionSample(at: p.at, position: p.position,
                                                     confidence: p.confidence, source: source))
         case .nudgeDelivered:

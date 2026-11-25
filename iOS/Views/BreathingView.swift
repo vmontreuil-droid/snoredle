@@ -11,6 +11,7 @@ struct BreathingView: View {
     private let durations = [4, 7, 8]
     private let labels = ["Adem in", "Houd vast", "Adem uit"]
     private let cycles = 4
+    @State private var generation = 0       // snel stop/start: oude lus stopt zeker
 
     var body: some View {
         ZStack {
@@ -43,26 +44,28 @@ struct BreathingView: View {
 
     private func start() {
         running = true; cycle = 1
-        Task { await loop() }
+        generation += 1
+        let g = generation
+        Task { await loop(g) }
     }
     private func stop() { running = false; withAnimation(.easeInOut(duration: 1)) { scale = 0.55 } }
 
-    @MainActor private func loop() async {
-        while running && cycle <= cycles {
+    @MainActor private func loop(_ g: Int) async {
+        while running && g == generation && cycle <= cycles {
             for p in 0..<3 {
-                guard running else { return }
+                guard running, g == generation else { return }
                 phase = p
                 remaining = durations[p]
                 withAnimation(.easeInOut(duration: Double(durations[p]))) {
                     scale = p == 0 ? 1.0 : (p == 1 ? 1.0 : 0.55)
                 }
-                while remaining > 0 && running {
+                while remaining > 0 && running && g == generation {
                     try? await Task.sleep(for: .seconds(1))
                     remaining -= 1
                 }
             }
             cycle += 1
         }
-        running = false
+        if g == generation { running = false }
     }
 }

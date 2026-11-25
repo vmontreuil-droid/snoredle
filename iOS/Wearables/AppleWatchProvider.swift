@@ -121,7 +121,10 @@ final class AppleWatchProvider: NSObject, WearableProvider, WCSessionDelegate {
                 subject.send(.position(hb.sample))
             }
             if hb.movement > 0.3 { subject.send(.vital(.movement, hb.movement, hb.sample.at)) }
-            if let i = takePendingNudge(), let d = try? WatchMessage.nudge(intensity: i).encoded() {
+            if currentSession == nil, let d = try? WatchMessage.stopSession(sessionID: UUID()).encoded() {
+                // Er loopt geen nacht op de iPhone: de watch mag stoppen (spaart batterij).
+                replyHandler(d)
+            } else if let i = takePendingNudge(), let d = try? WatchMessage.nudge(intensity: i).encoded() {
                 DiagLog.shared.log("tikje", "meegegeven in antwoord op seintje")
                 replyHandler(d)
             } else {
@@ -170,8 +173,8 @@ final class AppleWatchProvider: NSObject, WearableProvider, WCSessionDelegate {
         guard let s = session else { return "Deze iPhone ondersteunt geen Apple Watch-verbinding." }
         if s.activationState != .activated { s.activate(); return "Verbinding met de watch wordt opgestart. Probeer over enkele seconden opnieuw." }
         if !s.isPaired { return "Er is geen Apple Watch gekoppeld met deze iPhone." }
-        if !s.isWatchAppInstalled {
-            return "De Snoredle-app staat nog niet op je watch. Open op je iPhone de Watch-app › Beschikbare apps › Snoredle › Installeer."
+        if !s.isReachable && !s.isWatchAppInstalled && !isLive {
+            return "Snoredle lijkt niet op je watch te staan. Open op je iPhone de Watch-app › Snoredle › Toon op Apple Watch, en open de app één keer op je watch."
         }
         if !s.isReachable {
             return "Je watch is niet bereikbaar. Open Snoredle op je watch (scherm aan) en probeer opnieuw."

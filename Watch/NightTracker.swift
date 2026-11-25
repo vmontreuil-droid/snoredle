@@ -41,6 +41,7 @@ final class NightTracker: NSObject, ObservableObject {
     private var lastSentAt = Date.distantPast
     private var phoneWasReachable = true
     fileprivate var lastHRSent = Date.distantPast
+    fileprivate var heartbeatFailures = 0
 
     // MARK: Sessie
 
@@ -188,8 +189,23 @@ final class NightTracker: NSObject, ObservableObject {
                     NightTracker.shared.nudge(i)
                     NightTracker.shared.sendReliable(.nudgeDone(at: .now))
                 }
+                // iPhone meet niet (meer): stoppen, behalve vlak na de start.
+                if case .stopSession = msg, Date().timeIntervalSince(NightTracker.shared.trackingSince) > 60 {
+                    NightTracker.shared.remoteLog("iPhone meet niet meer → watch stopt")
+                    NightTracker.shared.stop()
+                }
             }
-        }, errorHandler: nil)
+        }, errorHandler: { error in
+            // Seintje kwam niet aan: houding bewaren voor later en (af en toe) melden.
+            Task { @MainActor in
+                let t = NightTracker.shared
+                t.heartbeatFailures += 1
+                if t.heartbeatFailures == 1 || t.heartbeatFailures % 30 == 0 {
+                    t.remoteLog("seintje mislukt (\(t.heartbeatFailures)×): \(error.localizedDescription)")
+                }
+                t.send(.positionSample(hb.sample))
+            }
+        })
         lastSentPosition = hb.sample.position; lastSentAt = .now
     }
 
@@ -228,8 +244,15 @@ final class NightTracker: NSObject, ObservableObject {
     // MARK: Communicatie
 
     /// Komt altijd aan, ook als de iPhone-app even niet open is.
-    func sendReliable(_ msg: WatchMessage) {
-        guard let data = try? msg.encoded(), WCSession.default.activationState == .activated else { return }
+    func sendReliable(_ msg: WatchMessage, attempt: Int = 0) {
+        guard let data = try? msg.encoded() else { return }
+        guard WCSession.default.activationState == .activated else {
+            // Net op de achtergrond gestart: verbinding is nog niet klaar → even later opnieuw.
+            if attempt < 10 {
+                Task { try? await Task.sleep(for: .seconds(2)); self.sendReliable(msg, attempt: attempt + 1) }
+            }
+            return
+        }
         if WCSession.default.isReachable { WCSession.default.sendMessageData(data, replyHandler: nil) { _ in
             WCSession.default.transferUserInfo(["msg": data]) } }
         else { WCSession.default.transferUserInfo(["msg": data]) }
@@ -337,7 +360,13 @@ final class NightTracker: NSObject, ObservableObject {
                 phoneRecording = true
                 sendStatus()
             } else { start(id: id, settings: s); phoneRecording = true }
-        case .stopSession: stop()
+        case .stopSession(let id):
+            // Een oude stop (van vorige ochtend, bleef in de wachtrij) mag een nieuwe nacht niet stoppen.
+            if isTracking, id != sessionID, Date().timeIntervalSince(trackingSince) < 180 {
+                remoteLog("oude stop-opdracht genegeerd")
+                return
+            }
+            stop()
         case .nudge(let i):
             nudge(i)
         case .startCalibration(let p): calibrate(p)
