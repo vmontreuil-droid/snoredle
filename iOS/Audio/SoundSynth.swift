@@ -212,6 +212,40 @@ final class SoundSynth {
     }
 }
 
+/// Speelt stilte (zonder microfoon) zodat de app op de achtergrond blijft draaien,
+/// bv. terwijl de wekker rinkelt en de watch moet blijven trillen.
+final class SilentKeepAlive {
+    static let shared = SilentKeepAlive()
+    private let engine = AVAudioEngine()
+    private var node: AVAudioSourceNode?
+
+    func start() {
+        let session = AVAudioSession.sharedInstance()
+        // Categorie wisselen terwijl de sessie actief blijft: mag op de achtergrond.
+        try? session.setCategory(.playback, options: [.mixWithOthers])
+        try? session.setActive(true)
+        if node == nil {
+            let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!
+            let n = AVAudioSourceNode(format: format) { _, _, frameCount, abl -> OSStatus in
+                for b in UnsafeMutableAudioBufferListPointer(abl) {
+                    if let p = b.mData { memset(p, 0, Int(b.mDataByteSize)) }
+                }
+                _ = frameCount
+                return noErr
+            }
+            engine.attach(n)
+            engine.connect(n, to: engine.mainMixerNode, format: format)
+            node = n
+        }
+        if !engine.isRunning { try? engine.start() }
+    }
+
+    func stop() {
+        engine.stop()
+        if let n = node { engine.detach(n); node = nil }
+    }
+}
+
 /// Slaapgeluiden met timer, voor het inslapen.
 @MainActor
 final class SleepSoundController: ObservableObject {

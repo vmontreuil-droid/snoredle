@@ -94,7 +94,7 @@ final class SessionManager: ObservableObject {
             Task { @MainActor in await self?.stop() }
         }
         AlarmService.shared.onAlarmStarted = { [weak self] in
-            Task { @MainActor in await self?.stop() }
+            Task { @MainActor in self?.alarmStarted() }
         }
         context = AppData.container.mainContext
         recoverUnfinishedNights()
@@ -252,12 +252,14 @@ final class SessionManager: ObservableObject {
         DiagLog.shared.log("nacht", "STOP · \(DiagLog.shared.summary) · episodes \(eventCount)")
         state = .finishing
         delayTask?.cancel()
+        alarmStopTask?.cancel(); alarmStopTask = nil
         closeEpisode(at: .now)
         for kind in Array(soundTracks.keys) { closeSound(kind) }
         closeOutOfBed(force: true)
         flushMinute()
         micWatchdog?.invalidate(); micWatchdog = nil
         detector.stop()
+        SilentKeepAlive.shared.stop()
         AlarmService.shared.disarm()
         SleepSoundController.shared.stop(fade: 0.5)
         hub.stop(id: session.id)
@@ -281,6 +283,27 @@ final class SessionManager: ObservableObject {
         current = nil
         state = .idle
         broadcastState()
+    }
+
+    /// De wekker gaat: microfoon meteen vrijgeven (wekkergeluid krijgt voorrang), watch blijft trillen.
+    /// De nacht sluit af als je de wekker uitzet, of hoogstens 10 min later.
+    private var alarmStopTask: Task<Void, Never>?
+    private func alarmStarted() {
+        guard current != nil, state != .finishing else { return }
+        DiagLog.shared.log("nacht", "wekker gaat → microfoon vrijgegeven, nacht sluit af bij uitzetten (of na 10 min)")
+        closeEpisode(at: .now)
+        for kind in Array(soundTracks.keys) { closeSound(kind) }
+        flushMinute()
+        micWatchdog?.invalidate(); micWatchdog = nil
+        detector.releaseMicrophone()
+        SilentKeepAlive.shared.start()
+        SleepSoundController.shared.stop(fade: 0.5)
+        alarmStopTask?.cancel()
+        alarmStopTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(600))
+            guard !Task.isCancelled else { return }
+            await self?.stop()
+        }
     }
 
     /// Haalt Gezondheid-gegevens op voor één nacht (één keer, of opnieuw als er nog geen slaapfasen waren).

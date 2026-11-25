@@ -203,7 +203,7 @@ struct NightExplorerView: View {
     private var positionChart: some View {
         timeline(Chart {
             ForEach(Array(positions.enumerated()), id: \.offset) { i, p in
-                let next = i + 1 < positions.count ? positions[i + 1].at : end
+                let next = min(i + 1 < positions.count ? positions[i + 1].at : end, p.at.addingTimeInterval(600))
                 BarMark(xStart: .value("Start", p.at), xEnd: .value("Einde", next), y: .value("", "Houding"))
                     .foregroundStyle(Theme.color(p.position))
             }
@@ -236,7 +236,7 @@ struct NightShareCard: View {
 
     var body: some View {
         let stats = SnoreAnalysis.positionStats(session)
-        let total = max(1, stats.map(\.minutes).reduce(0, +))
+        let total = max(1, stats.map(\.minutes).reduce(0, +))   // max: nooit delen door 0
         VStack(alignment: .leading, spacing: 28) {
             HStack(spacing: 14) {
                 MoonMark().frame(width: 56, height: 56)

@@ -110,6 +110,16 @@ final class SnoreDetector: NSObject {
         }
     }
 
+    /// Microfoon los, maar de audiosessie actief houden (anders pauzeert iOS de app op de achtergrond).
+    func releaseMicrophone() {
+        running = false
+        NotificationCenter.default.removeObserver(self)
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        analyzer?.completeAnalysis()
+        analyzer = nil
+    }
+
     func stop() {
         running = false
         NotificationCenter.default.removeObserver(self)

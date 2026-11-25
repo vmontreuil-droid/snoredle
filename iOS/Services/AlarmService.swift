@@ -171,7 +171,7 @@ final class AlarmService: ObservableObject {
                 return
             }
             permissionDenied = false
-            AlarmKitBackend.cancelAll()
+            AlarmKitBackend.cancelAll(keeping: nonStoppingIDs)   // tests en slaapwandelalarm laten staan
             var skips = Self.loadSkips()
             skips = skips.filter { $0.value > .now }          // verlopen overslagen opruimen
             Self.saveSkips(skips)
@@ -253,7 +253,8 @@ final class AlarmService: ObservableObject {
         if #available(iOS 26.0, *) {
             guard await AlarmKitBackend.authorize() else { return "Geen toestemming voor wekkers." }
             do {
-                _ = try await AlarmKitBackend.scheduleOnce(at: .now.addingTimeInterval(15), title: "Slim gewekt (test)", id: UUID())
+                let id = UUID(); nonStoppingIDs.insert(id)       // een test mag een lopende nacht niet afsluiten
+                _ = try await AlarmKitBackend.scheduleOnce(at: .now.addingTimeInterval(15), title: "Slim gewekt (test)", id: id)
                 return "Over 15 seconden: wekker met geluid, en je watch trilt nu al."
             } catch { return "Mislukt: \(error.localizedDescription)" }
         }
@@ -271,7 +272,8 @@ final class AlarmService: ObservableObject {
                 return "Geen toestemming. Zet 'Wekkers' aan in Instellingen › Apps › Snoredle."
             }
             do {
-                _ = try await AlarmKitBackend.scheduleOnce(at: .now.addingTimeInterval(60), title: "Test Snoredle", id: UUID())
+                let id = UUID(); nonStoppingIDs.insert(id)       // niet annuleren bij nacht starten, nacht niet afsluiten
+                _ = try await AlarmKitBackend.scheduleOnce(at: .now.addingTimeInterval(60), title: "Test Snoredle", id: id)
                 DiagLog.shared.log("wekker", "test gepland over 1 minuut")
                 return "Testwekker gaat over 1 minuut af. Zet je iPhone gerust op stil om het te proberen."
             } catch {
@@ -479,8 +481,8 @@ enum AlarmKitBackend {
     static func cancel(_ id: UUID) { try? AlarmManager.shared.cancel(id: id) }
 
     /// Alles annuleren behalve wat nu rinkelt (anders valt een rinkelende wekker stil).
-    static func cancelAll() {
-        for a in (try? AlarmManager.shared.alarms) ?? [] where a.state != .alerting {
+    static func cancelAll(keeping keep: Set<UUID> = []) {
+        for a in (try? AlarmManager.shared.alarms) ?? [] where a.state != .alerting && !keep.contains(a.id) {
             try? AlarmManager.shared.cancel(id: a.id)
         }
     }
