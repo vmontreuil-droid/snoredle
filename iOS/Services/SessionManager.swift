@@ -106,6 +106,7 @@ final class SessionManager: ObservableObject {
         guard let ctx = context,
               let open = try? ctx.fetch(FetchDescriptor<SleepSession>(predicate: #Predicate<SleepSession> { $0.end == nil })) else { return }
         for s in open where s.id != current?.id {
+            DiagLog.shared.log("nacht", "⚠️ nacht van \(s.start.formatted(date: .omitted, time: .shortened)) liep nog bij het opstarten → app was onverwacht gestopt (crash of afgesloten door iOS)")
             let lastSample = s.loudness.map(\.at).max() ?? s.events.map(\.end).max() ?? s.start
             if lastSample.timeIntervalSince(s.start) < 600 { ctx.delete(s); continue }   // te kort, weg ermee
             s.end = lastSample

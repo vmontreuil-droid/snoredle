@@ -28,8 +28,11 @@ final class DiagLog: @unchecked Sendable {
                 // Oude helft weggooien
                 if let d = try? Data(contentsOf: u) { try? d.suffix(1_000_000).write(to: u) }
             }
+            // Moderne (throwing) API's: de oude seekToEndOfFile/write laten de app crashen bij een schrijffout.
             if let h = try? FileHandle(forWritingTo: u) {
-                h.seekToEndOfFile(); h.write(Data(line.utf8)); try? h.close()
+                _ = try? h.seekToEnd()
+                try? h.write(contentsOf: Data(line.utf8))
+                try? h.close()
             } else {
                 try? Data(line.utf8).write(to: u)
             }

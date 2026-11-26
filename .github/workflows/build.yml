@@ -96,6 +96,12 @@ jobs:
             -authenticationKeyPath ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 \
             -authenticationKeyID $ASC_KEY_ID -authenticationKeyIssuerID $ASC_ISSUER_ID \
             archive
+      - name: dSYM's bewaren (om crashes te kunnen ontcijferen)
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsym-${{ github.run_number }}
+          path: ${{ runner.temp }}/Snoredle.xcarchive/dSYMs
+          retention-days: 90
       - name: Controle watch-app in pakket
         run: |
           ls -la "$RUNNER_TEMP/Snoredle.xcarchive/Products/Applications/Snoredle.app/Watch" || echo "::warning::GEEN watch-app in het pakket"

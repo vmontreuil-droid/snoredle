@@ -24,6 +24,7 @@ struct SnoredleApp: App {
     var container: ModelContainer { AppData.container }
 
     init() {
+        CrashReporter.shared.start()
         WearableHub.shared.register(AppleWatchProvider())
         if AppSettings.shared.useBluetoothHR {
             WearableHub.shared.register(BluetoothHeartRateProvider())
