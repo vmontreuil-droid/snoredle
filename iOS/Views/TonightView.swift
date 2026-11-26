@@ -24,6 +24,23 @@ struct TonightView: View {
                 VStack(alignment: .leading, spacing: 28) {
                     header
 
+                    if let s = manager.interrupted {
+                        GlassCard {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Label("Je meting werd onderbroken", systemImage: "exclamationmark.triangle.fill")
+                                    .font(.headline).foregroundStyle(.orange)
+                                Text("Snoredle stopte onverwacht tijdens je nacht van \(s.start.formatted(date: .omitted, time: .shortened)). Meet verder in dezelfde nacht; het gat telt als pauze.")
+                                    .font(.footnote).foregroundStyle(.secondary)
+                                HStack {
+                                    Button { manager.resumeInterrupted() } label: {
+                                        Label("Verder meten", systemImage: "play.fill").frame(maxWidth: .infinity)
+                                    }.buttonStyle(.borderedProminent)
+                                    Button("Afsluiten") { manager.closeInterrupted() }.buttonStyle(.bordered)
+                                }
+                            }
+                        }
+                    }
+
                     if let last = sessions.first(where: { $0.end != nil }) {
                         NavigationLink { SessionDetailView(session: last) } label: { LastNightCard(session: last) }
                             .buttonStyle(.plain)
@@ -353,11 +370,12 @@ struct LastNightCard: View {
             HStack(spacing: 18) {
                 ScoreRing(score: session.snoreScore).frame(width: 70, height: 70)
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("VORIGE NACHT").font(.caption2.weight(.semibold)).tracking(1.2).foregroundStyle(.secondary)
-                    Text(SnoreAnalysis.scoreLabel(session.snoreScore))
+                    Text("VORIGE NACHT · \(session.nightTitle.uppercased())").font(.caption2.weight(.semibold)).tracking(1.2).foregroundStyle(.secondary)
+                    Text("\(SnoreAnalysis.scoreLabel(session.snoreScore)) gesnurkt")
                         .font(.system(.title2, design: .rounded).weight(.bold))
+                    Text("Snurkscore \(session.snoreScore) · hoe lager, hoe beter").font(.caption2).foregroundStyle(.secondary)
                     HStack(spacing: 14) {
-                        Label("\(Int(session.snoreMinutes)) min", systemImage: "waveform")
+                        Label("\(Int(session.snoreMinutes)) min (\(Int(session.snorePercentage * 100))%)", systemImage: "waveform")
                         Label(String(format: "%.1f u", session.sleepDuration / 3600), systemImage: "bed.double.fill")
                     }
                     .font(.footnote).foregroundStyle(.secondary)

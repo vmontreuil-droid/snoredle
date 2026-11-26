@@ -70,7 +70,11 @@ struct WatchHomeView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 8) {
-                if let g = t.guidedStep {
+                if let a = t.alertText {
+                    Image(systemName: "exclamationmark.triangle.fill").font(.largeTitle).foregroundStyle(.orange)
+                    Text(a).font(.footnote).multilineTextAlignment(.center)
+                    Button("OK") { t.alertText = nil }
+                } else if let g = t.guidedStep {
                     Text("Lig \(g.instruction)").font(.headline).multilineTextAlignment(.center)
                     Image(systemName: g.symbol).font(.largeTitle).foregroundStyle(.orange)
                     Text("\(t.guidedCountdown)").font(.title.bold()).monospacedDigit()

@@ -135,7 +135,16 @@ final class SnoreDetector: NSObject {
         guard let info = note.userInfo,
               let raw = info[AVAudioSessionInterruptionTypeKey] as? UInt,
               let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
-        if type == .began { onRestart?("onderbroken (bv. oproep of wekker)") }
+        if type == .began {
+            let reason = (info[AVAudioSessionInterruptionReasonKey] as? UInt).flatMap(AVAudioSession.InterruptionReason.init(rawValue:))
+            let why: String = switch reason {
+            case .appWasSuspended: "app werd stilgezet door iOS"
+            case .builtInMicMuted: "microfoon gedempt"
+            case .routeDisconnected: "audioroute weg"
+            default: "andere app, oproep, Siri of wekker"
+            }
+            onRestart?("ONDERBROKEN: \(why)")
+        }
         if type == .ended { DispatchQueue.main.async { self.restart(reason: "onderbreking voorbij") } }
     }
 

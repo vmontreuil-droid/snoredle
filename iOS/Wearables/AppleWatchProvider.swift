@@ -24,6 +24,9 @@ final class AppleWatchProvider: NSObject, WearableProvider, WCSessionDelegate {
     private(set) var lastHeartbeat = Date.distantPast
 
     private var currentSession: (UUID, WatchSettings)?
+    /// Er is een onderbroken nacht (app onverwacht gestopt): watch één keer verwittigen.
+    nonisolated(unsafe) static var interruptedNight = false
+    private var interruptAlertSent = false
     private var watchdog: Timer?
     private var restarts = 0
 
@@ -121,7 +124,12 @@ final class AppleWatchProvider: NSObject, WearableProvider, WCSessionDelegate {
                 subject.send(.position(hb.sample))
             }
             if hb.movement > 0.3 { subject.send(.vital(.movement, hb.movement, hb.sample.at)) }
-            if currentSession == nil, let d = try? WatchMessage.stopSession(sessionID: UUID()).encoded() {
+            if currentSession == nil, Self.interruptedNight, !interruptAlertSent,
+               let d = try? WatchMessage.alert("Snoredle op je iPhone is gestopt. Open de app op je iPhone om verder te meten.").encoded() {
+                interruptAlertSent = true
+                DiagLog.shared.log("watch", "watch verwittigd: meting op iPhone onderbroken")
+                replyHandler(d)
+            } else if currentSession == nil, let d = try? WatchMessage.stopSession(sessionID: UUID()).encoded() {
                 // Er loopt geen nacht op de iPhone: de watch mag stoppen (spaart batterij).
                 replyHandler(d)
             } else if let i = takePendingNudge(), let d = try? WatchMessage.nudge(intensity: i).encoded() {

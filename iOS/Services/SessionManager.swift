@@ -17,6 +17,8 @@ final class SessionManager: ObservableObject {
     @Published private(set) var isSnoring = false
     @Published private(set) var eventCount = 0
     @Published var lastError: String?
+    /// Nacht die nog liep toen de app onverwacht stopte: kan hervat worden.
+    @Published var interrupted: SleepSession?
     @Published private(set) var pausedUntil: Date?
     private var pauseStart: Date?
     private var resumeTask: Task<Void, Never>?
@@ -90,6 +92,27 @@ final class SessionManager: ObservableObject {
         hub.events
             .sink { [weak self] source, event in self?.handleWearable(event, source: source) }
             .store(in: &bag)
+        // Levenscyclus loggen: zo zien we achteraf waarom een nacht stopte.
+        let nc = NotificationCenter.default
+        nc.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                DiagLog.shared.logNow("app", "WORDT AFGESLOTEN (weggeveegd of door iOS) · nacht liep: \(self?.current != nil)")
+                try? self?.context?.save()
+            }
+        }
+        nc.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main) { _ in
+            DiagLog.shared.log("app", "geheugenwaarschuwing van iOS")
+        }
+        nc.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                DiagLog.shared.log("app", "naar achtergrond · nacht loopt: \(self?.current != nil) · audio actief: \(AVAudioSession.sharedInstance().isOtherAudioPlaying ? "andere app speelt" : "ok")")
+                try? self?.context?.save()      // tussentijds bewaren
+            }
+        }
+        nc.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { _ in
+            DiagLog.shared.log("app", "naar voorgrond")
+        }
+
         AlarmService.shared.onDismissed = { [weak self] in
             Task { @MainActor in await self?.stop() }
         }
@@ -106,7 +129,16 @@ final class SessionManager: ObservableObject {
         guard let ctx = context,
               let open = try? ctx.fetch(FetchDescriptor<SleepSession>(predicate: #Predicate<SleepSession> { $0.end == nil })) else { return }
         for s in open where s.id != current?.id {
-            DiagLog.shared.log("nacht", "⚠️ nacht van \(s.start.formatted(date: .omitted, time: .shortened)) liep nog bij het opstarten → app was onverwacht gestopt (crash of afgesloten door iOS)")
+            DiagLog.shared.log("nacht", "⚠️ nacht van \(s.start.formatted(date: .omitted, time: .shortened)) liep nog bij het opstarten → app was onverwacht gestopt")
+            // Recente nacht (< 14 u): bewaren om verder te meten, gebruiker en watch verwittigen.
+            if Date().timeIntervalSince(s.start) < 14 * 3600, interrupted == nil {
+                interrupted = s
+                AppleWatchProvider.interruptedNight = true
+                NotificationService.shared.notify(
+                    title: "Snoredle is gestopt",
+                    body: "Je meting van \(s.start.formatted(date: .omitted, time: .shortened)) werd onderbroken. Tik om verder te meten.")
+                continue
+            }
             let lastSample = s.loudness.map(\.at).max() ?? s.events.map(\.end).max() ?? s.start
             if lastSample.timeIntervalSince(s.start) < 600 { ctx.delete(s); continue }   // te kort, weg ermee
             s.end = lastSample
@@ -192,12 +224,48 @@ final class SessionManager: ObservableObject {
         session.remediesRaw = remedies.map(\.rawValue)
         session.wearableName = hub.active.map(\.name).joined(separator: ", ")
         context.insert(session)
+        begin(session, resuming: false)
+    }
+
+    /// Een nacht die onverwacht stopte (app afgesloten) verder meten in dezelfde sessie.
+    func resumeInterrupted() {
+        guard state == .idle, let s = interrupted else { return }
+        if AVAudioApplication.shared.recordPermission == .denied {
+            lastError = "Snoredle heeft geen toegang tot de microfoon."; return
+        }
+        interrupted = nil
+        AppleWatchProvider.interruptedNight = false
+        // Het gat telt als pauze: geen slaap- of snurkcijfers voor die periode.
+        let lastSample = [s.loudness.map(\.at).max(), s.events.map(\.end).max(), s.positions.map(\.at).max()]
+            .compactMap { $0 }.max() ?? s.start
+        if Date().timeIntervalSince(lastSample) > 60 {
+            s.pausesRaw += [lastSample.timeIntervalSince1970, Date().timeIntervalSince1970]
+        }
+        DiagLog.shared.log("nacht", "HERVAT na onderbreking (gat van \(Int(Date().timeIntervalSince(lastSample) / 60)) min telt als pauze)")
+        begin(s, resuming: true)
+    }
+
+    /// Onderbroken nacht niet hervatten maar afsluiten.
+    func closeInterrupted() {
+        guard let s = interrupted, let ctx = context else { return }
+        interrupted = nil
+        AppleWatchProvider.interruptedNight = false
+        let lastSample = s.loudness.map(\.at).max() ?? s.events.map(\.end).max() ?? s.start
+        s.end = max(lastSample, s.start.addingTimeInterval(60))
+        s.note = s.note.isEmpty ? "Meting werd onderbroken (app afgesloten)." : s.note
+        SnoreAnalysis.summarize(s)
+        try? ctx.save()
+        WidgetBridge.publish(context: ctx)
+    }
+
+    private func begin(_ session: SleepSession, resuming: Bool) {
+        guard let context else { return }
         current = session
-        resetEpisode(); clipsThisNight = 0; eventCount = 0
+        resetEpisode(); clipsThisNight = 0; eventCount = session.events.count
         // Niets van de vorige nacht meenemen.
         knownPosition = .unknown; positionAt = .distantPast
         lastNudge = .distantPast; episodeNudges = 0; silentSince = nil; restlessStreak = 0; lastSnoreFrame = nil
-        soundTracks = [:]; nightSoundCount = 0
+        soundTracks = [:]; nightSoundCount = session.nightSounds.count
         recentSteps = []; uprightNow = false; outStart = nil; outSteps = 0; outAlerted = false
         // Minuut-teller opnieuw starten, anders krijgt het eerste meetpunt een oud tijdstip.
         minuteDb = []; minuteSnore = []; minuteStart = .now
@@ -213,7 +281,8 @@ final class SessionManager: ObservableObject {
             lastError = "Microfoon kon niet starten: \(error.localizedDescription)"
             DiagLog.shared.log("nacht", "microfoon start mislukt: \(error.localizedDescription)")
             hub.stop(id: session.id)
-            context.delete(session); current = nil; broadcastState(); return
+            if resuming { interrupted = session } else { context.delete(session) }
+            current = nil; broadcastState(); return
         }
 
         micWatchdog?.invalidate()
@@ -227,13 +296,13 @@ final class SessionManager: ObservableObject {
 
         Task { await AlarmService.shared.arm() }
         pausedUntil = nil; pauseStart = nil
-        DiagLog.shared.resetCounters()
+        if !resuming { DiagLog.shared.resetCounters() }
         DiagLog.shared.log("nacht", "geluid bij snurken: \(NudgeSound(rawValue: settings.nudgeSoundRaw)?.label ?? "?") op \(Int(settings.nudgeSoundVolume * 100))% · mediavolume iPhone \(Int(NudgeSoundPlayer.systemVolume * 100))%")
         DiagLog.shared.log("nacht", "START · watch actief: \(hub.active.map(\.name)) · tikjes \(settings.nudgeEnabled ? "aan" : "uit") (alleen rug: \(settings.nudgeOnlyOnBack), na \(Int(settings.nudgeAfterSeconds)) s, eerste \(settings.nudgeQuietFirstMinutes) min niet) · volgende wekker: \(AlarmService.shared.nextItem.map { "\($0.0.timeText) slim=\($0.0.smart)" } ?? "geen")")
         defer { broadcastState() }
         LiveActivityService.shared.start(session: session, alarm: nil)
 
-        let delay = TimeInterval(settings.startDelayMinutes * 60)
+        let delay = resuming ? 0 : TimeInterval(settings.startDelayMinutes * 60)
         if delay > 0 {
             let until = Date().addingTimeInterval(delay)
             state = .waiting(until: until)

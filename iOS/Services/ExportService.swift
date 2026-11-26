@@ -35,7 +35,10 @@ enum ExportService {
         renderer.render { size, draw in
             var box = CGRect(origin: .zero, size: CGSize(width: 595, height: max(842, size.height)))
             guard let ctx = CGContext(url as CFURL, mediaBox: &box, nil) else { return }
-            ctx.beginPDFPage(nil); draw(ctx); ctx.endPDFPage(); ctx.closePDF()
+            ctx.beginPDFPage(nil)
+            // PDF tekent van onderaf: inhoud bovenaan de pagina zetten (anders groot wit vlak bovenaan).
+            ctx.translateBy(x: 0, y: box.height - size.height)
+            draw(ctx); ctx.endPDFPage(); ctx.closePDF()
         }
         return url
     }
@@ -50,14 +53,14 @@ struct DoctorReportView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Snurkrapport").font(.largeTitle.bold())
             if let f = done.first, let l = done.last {
-                Text("\(f.start.formatted(date: .abbreviated, time: .omitted)) – \(l.start.formatted(date: .abbreviated, time: .omitted)) · \(done.count) nachten")
+                Text("\(f.start.formatted(date: .abbreviated, time: .omitted)) – \(l.start.formatted(date: .abbreviated, time: .omitted)) · \(done.count) \(done.count == 1 ? "nacht" : "nachten")")
                     .foregroundStyle(.secondary)
             }
             let avg = done.isEmpty ? 0 : done.map(\.snoreScore).reduce(0, +) / done.count
             let snore = done.isEmpty ? 0 : done.map(\.snorePercentage).reduce(0, +) / Double(done.count)
             let apnea = done.map(\.possibleApneaEvents).reduce(0, +)
             HStack(spacing: 24) {
-                stat("Gem. score", "\(avg)")
+                stat("Gem. snurkscore (lager = beter)", "\(avg)")
                 stat("Snurktijd", "\(Int(snore * 100))%")
                 stat("Mogelijke ademstops", "\(apnea)")
             }

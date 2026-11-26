@@ -124,6 +124,20 @@ final class NightTracker: NSObject, ObservableObject {
         }
     }
 
+    /// Belangrijke melding: sterk trillen en de tekst tonen, daarna stoppen (spaart batterij).
+    @Published var alertText: String?
+    func alert(_ text: String) {
+        alertText = text
+        remoteLog("melding getoond: \(text)")
+        Task {
+            for _ in 0..<3 {
+                WKInterfaceDevice.current().play(.failure)
+                try? await Task.sleep(for: .seconds(1.2))
+            }
+            self.stop()
+        }
+    }
+
     /// Stuurt een regel naar het logboek op de iPhone.
     func remoteLog(_ text: String) { sendReliable(.log(text)) }
 
@@ -195,6 +209,10 @@ final class NightTracker: NSObject, ObservableObject {
                 if case .nudge(let i) = msg {
                     NightTracker.shared.nudge(i)
                     NightTracker.shared.sendReliable(.nudgeDone(at: .now))
+                }
+                // iPhone-app is onverwacht gestopt: duidelijk verwittigen, dan stoppen.
+                if case .alert(let text) = msg {
+                    NightTracker.shared.alert(text)
                 }
                 // iPhone meet niet (meer): stoppen, behalve vlak na de start.
                 if case .stopSession = msg, Date().timeIntervalSince(NightTracker.shared.trackingSince) > 60 {

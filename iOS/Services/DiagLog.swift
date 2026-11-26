@@ -39,6 +39,12 @@ final class DiagLog: @unchecked Sendable {
         }
     }
 
+    /// Meteen (synchroon) wegschrijven: voor de laatste regel vlak voor de app afgesloten wordt.
+    func logNow(_ category: String, _ message: String) {
+        log(category, message)
+        queue.sync {}
+    }
+
     func resetCounters() { heartbeats = 0; nudgesRequested = 0; nudgesDelivered = 0 }
 
     func heartbeat(position: String, movement: Double) {
