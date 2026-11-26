@@ -32,6 +32,7 @@ final class SessionManager: ObservableObject {
     private var delayTask: Task<Void, Never>?
     /// Waakhond: komt er geen audio meer binnen, dan de microfoon herstarten.
     private var micWatchdog: Timer?
+    private var watchdogTicks = 0
 
     // Episode-toestand
     private var snoreStreak = 0
@@ -291,6 +292,11 @@ final class SessionManager: ObservableObject {
                 guard let self, self.current != nil, self.state != .finishing else { return }
                 let quiet = Date().timeIntervalSince(self.detector.lastBufferAt)
                 if quiet > 20 { self.detector.restart(reason: "\(Int(quiet)) s geen audio") }
+                // Elke 10 min: geheugen en of de microfoon nog loopt, in het logboek.
+                self.watchdogTicks += 1
+                if self.watchdogTicks % 30 == 1 {
+                    DiagLog.shared.log("app", "geheugen \(DiagLog.memoryMB) MB · audio \(quiet < 5 ? "loopt" : "STIL \(Int(quiet)) s") · snurkperiodes \(self.eventCount)")
+                }
             }
         }
 

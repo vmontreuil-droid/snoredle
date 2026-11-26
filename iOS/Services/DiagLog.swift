@@ -45,6 +45,18 @@ final class DiagLog: @unchecked Sendable {
         queue.sync {}
     }
 
+    /// Werkelijk geheugengebruik van de app in MB (zoals iOS het telt voor afsluiten).
+    static var memoryMB: Int {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+        let r = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        return r == KERN_SUCCESS ? Int(info.phys_footprint / 1_048_576) : -1
+    }
+
     func resetCounters() { heartbeats = 0; nudgesRequested = 0; nudgesDelivered = 0 }
 
     func heartbeat(position: String, movement: Double) {
