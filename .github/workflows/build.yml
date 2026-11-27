@@ -140,3 +140,27 @@ jobs:
           open("/tmp/key.p8", "w").write("-----BEGIN PRIVATE KEY-----\n" + "\n".join(lines) + "\n-----END PRIVATE KEY-----\n")
           PY
           python3 ci/asc_crashes.py "$ASC_KEY_ID" "$ASC_ISSUER_ID" /tmp/key.p8
+
+  symbolicate:
+    name: Crash ontcijferen
+    if: contains(github.event.head_commit.message, '[symbolicate]')
+    runs-on: macos-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - name: Ontcijferen
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # ci/crash.txt: regel 1 = build, regel 2 = run-id van die build, daarna offsets (imageOffset in Snoredle)
+          BUILD=$(sed -n 1p ci/crash.txt); RUN=$(sed -n 2p ci/crash.txt)
+          gh run download "$RUN" -R "$GITHUB_REPOSITORY" -n "dsym-$BUILD" -D dsym
+          BIN=$(find dsym -path "*Snoredle.app.dSYM/Contents/Resources/DWARF/Snoredle" | head -1)
+          echo "dSYM: $BIN"; dwarfdump --uuid "$BIN"
+          tail -n +3 ci/crash.txt | while read off; do
+            [ -z "$off" ] && continue
+            printf "%s  " "$off"
+            atos -arch arm64 -o "$BIN" -l 0x100000000 $(printf "0x%x" $((0x100000000 + off)))
+          done
