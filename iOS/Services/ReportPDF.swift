@@ -481,7 +481,7 @@ private struct PeriodSummaryPage: View {
         let avgPct = nights.map(\.snorePercentage).reduce(0, +) / Double(n)
         let avgSleep = nights.map(\.sleepDuration).reduce(0, +) / Double(n)
         let apnea = nights.map(\.possibleApneaEvents).reduce(0, +)
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Snurkrapport").font(.system(size: 26, weight: .bold, design: .rounded))
                 if let f = nights.first, let l = nights.last {
@@ -490,7 +490,7 @@ private struct PeriodSummaryPage: View {
                 }
             }
             HStack(alignment: .center, spacing: 18) {
-                PDFScoreRing(score: avgScore).frame(width: 100, height: 100)
+                PDFScoreRing(score: avgScore).frame(width: 86, height: 86)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Gemiddeld: \(SnoreAnalysis.scoreLabel(avgScore).lowercased()) gesnurkt").font(.system(size: 18, weight: .bold, design: .rounded))
                     Text("Gemiddelde snurkscore over de periode (lager = beter).").font(.system(size: 9)).foregroundStyle(.secondary)
@@ -510,7 +510,7 @@ private struct PeriodSummaryPage: View {
                 }
                 .chartXAxis { AxisMarks { AxisValueLabel(format: .dateTime.day().month(.abbreviated)) } }
                 .chartYAxis { AxisMarks { AxisGridLine().foregroundStyle(R.line); AxisValueLabel() } }
-                .frame(height: 150)
+                .frame(height: 115)
             }
             Card(title: "Snurktijd per nacht (% van je slaap)") {
                 Chart(nights, id: \.id) { s in
@@ -521,7 +521,7 @@ private struct PeriodSummaryPage: View {
                 }
                 .chartXAxis { AxisMarks { AxisValueLabel(format: .dateTime.day().month(.abbreviated)) } }
                 .chartYAxis { AxisMarks { AxisGridLine().foregroundStyle(R.line); AxisValueLabel() } }
-                .frame(height: 120)
+                .frame(height: 90)
             }
             Card(title: "Geslapen per nacht (uren)") {
                 Chart(nights, id: \.id) { s in
@@ -530,7 +530,7 @@ private struct PeriodSummaryPage: View {
                 }
                 .chartXAxis { AxisMarks { AxisValueLabel(format: .dateTime.day().month(.abbreviated)) } }
                 .chartYAxis { AxisMarks { AxisGridLine().foregroundStyle(R.line); AxisValueLabel() } }
-                .frame(height: 100)
+                .frame(height: 75)
             }
         }
     }
