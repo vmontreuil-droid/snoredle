@@ -1,3 +1,4 @@
+[hidden] { display: none !important; }
 /* Snoredle-portaal · huisstijl "de maan" */
 @font-face { font-family: "Fredoka"; font-weight: 500; font-display: swap; src: url(fonts/fredoka-latin-500-normal.woff2) format("woff2"); }
 @font-face { font-family: "Fredoka"; font-weight: 600; font-display: swap; src: url(fonts/fredoka-latin-600-normal.woff2) format("woff2"); }
@@ -138,4 +139,71 @@ tr.link { cursor: pointer; } tr.link:hover td { background: rgba(255,255,255,.03
   .card, .tile, .night { background: #fff; border-color: #ddd; break-inside: avoid; }
   .muted, .tile .lbl, th { color: #555; }
   main { max-width: none; padding: 0; }
+}
+
+/* ---------- Aanmelden: splitscreen ---------- */
+body.auth-mode main { max-width: none; padding: 0; }
+body.auth-mode .foot { display: none; }
+.auth { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(380px, 1fr); min-height: 100dvh; }
+.auth-hero { position: relative; overflow: hidden; padding: clamp(32px, 6vw, 80px); display: flex; flex-direction: column; justify-content: center; gap: 22px;
+  background: linear-gradient(160deg, var(--middernacht-2) 0%, var(--middernacht) 45%, var(--nacht) 100%); border-right: 1px solid var(--lijn); }
+.auth-hero .glow { position: absolute; width: 640px; height: 640px; right: -220px; top: -260px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,184,89,.20), rgba(255,184,89,0) 65%); pointer-events: none; }
+.auth-hero > * { position: relative; max-width: 560px; }
+.auth-brand { display: flex; align-items: center; gap: 12px; }
+.auth-brand .wordmark { font-size: 34px; font-weight: 700; color: var(--maanlicht); }
+.auth-moon { width: 58px; height: 58px; filter: drop-shadow(0 0 18px rgba(255,184,89,.35)); }
+.auth-title { font-size: clamp(32px, 4.2vw, 54px); line-height: 1.05; margin: 8px 0 0; color: var(--maanlicht); }
+.auth-title em { font-style: normal; color: var(--amber); }
+.auth-lead { color: var(--muted-2); font-size: 17px; line-height: 1.55; margin: 0; }
+.auth-demo { background: rgba(255,255,255,.035); border: 1px solid var(--lijn); border-radius: 20px; padding: 16px 18px; backdrop-filter: blur(4px); }
+.auth-demo svg { width: 100%; height: 110px; display: block; margin: 12px 0 6px; }
+.auth-score { font: 700 24px var(--titel); color: var(--licht); }
+.auth-score small { font: 500 13px var(--titel); color: var(--muted); }
+.auth-points { list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; }
+.auth-points li { display: flex; gap: 14px; align-items: flex-start; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.auth-points b { flex: none; width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: rgba(255,184,89,.12); font-size: 19px; }
+.auth-points strong { display: block; color: var(--maanlicht); font: 600 16px var(--titel); margin-bottom: 2px; }
+.auth-side { display: flex; align-items: center; justify-content: center; padding: clamp(24px, 5vw, 64px); }
+.auth-form { width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 12px; }
+.auth-form h2 { font-size: 30px; margin: 0; }
+.auth-form input { padding: 14px 16px; font-size: 16px; border-radius: 14px; }
+.code-input { letter-spacing: .35em; font: 600 22px var(--titel) !important; text-align: center; }
+.btn.wide { width: 100%; justify-content: center; padding: 14px 20px; font-size: 16px; margin-top: 4px; }
+.auth-steps { margin: 10px 0 0; padding: 16px 16px 16px 34px; border: 1px dashed var(--lijn); border-radius: 14px; line-height: 1.9; }
+
+@media (max-width: 900px) {
+  .auth { grid-template-columns: 1fr; min-height: auto; }
+  .auth-hero { border-right: 0; border-bottom: 1px solid var(--lijn); padding: 28px 22px 26px; gap: 14px; align-items: center; text-align: center; }
+  .auth-hero .glow { width: 420px; height: 420px; right: 50%; margin-right: -210px; top: -240px; }
+  .auth-demo, .auth-points { display: none; }
+  .auth-moon { width: 46px; height: 46px; }
+  .auth-brand .wordmark { font-size: 28px; }
+  .auth-title { font-size: 30px; }
+  .auth-lead { font-size: 15px; }
+  .auth-side { padding: 26px 20px 40px; align-items: flex-start; }
+}
+
+/* ---------- Gsm: rest van het portaal ---------- */
+@media (max-width: 640px) {
+  .top { flex-wrap: wrap; gap: 8px; padding-left: 14px; padding-right: 14px; }
+  .top nav { width: 100%; margin: 0 -4px; padding-bottom: 2px; }
+  .top nav a { padding: 7px 12px; font-size: 14px; }
+  main { padding: 16px 14px 28px; }
+  h1 { font-size: 26px; }
+  .g3 { grid-template-columns: 1fr; }
+  .g3 > [style*="span 2"] { grid-column: auto !important; flex-wrap: wrap; }
+  .card { padding: 16px; border-radius: 18px; }
+  .tile { padding: 12px 14px; }
+  .tile .num { font-size: 20px; }
+  .chart { height: 240px; }
+  .chart.small { height: 170px; }
+  .seg { width: 100%; }
+  .seg button { flex: 1; }
+  .row.spread > .row { width: 100%; }
+  table { font-size: 13px; }
+  th, td { padding: 8px 6px; }
+  .cal { gap: 4px; }
+  .nights { grid-template-columns: 1fr; }
+  .ring { transform: scale(.85); }
 }

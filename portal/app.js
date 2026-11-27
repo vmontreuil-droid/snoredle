@@ -73,6 +73,7 @@ const app = $("#app");
 const routes = { "": viewDash, nachten: viewNights, nacht: viewNight, inzichten: viewInsights, account: viewAccount, privacy: viewPrivacy, login: viewLogin };
 async function route() {
   clearCharts();
+  document.body.classList.remove("auth-mode");
   const [name, arg] = location.hash.replace(/^#\/?/, "").split("/");
   document.querySelectorAll("[data-nav]").forEach((a) => a.classList.toggle("on",
     (a.dataset.nav === "dash" && name === "") || (a.dataset.nav === "nights" && (name === "nachten" || name === "nacht")) ||
@@ -90,24 +91,62 @@ window.addEventListener("hashchange", route);
 if (sb) sb.auth.onAuthStateChange((ev) => { if (ev === "SIGNED_IN" || ev === "SIGNED_OUT") { cache = null; route(); } });
 
 // ---------- Aanmelden ----------
+const MOON = (cls) => `<svg class="${cls}" viewBox="0 0 100 100" aria-hidden="true"><path d="M40.43 22.21A30 30 0 1 0 72.89 60.08A25 25 0 0 1 40.43 22.21Z" fill="#FFB859"/><path d="M64.6 28.3A10 10 0 0 1 72.0 38.9" fill="none" stroke="#FFB859" stroke-width="4.2" stroke-linecap="round"/><path d="M66.4 21.6A17 17 0 0 1 78.9 39.5" fill="none" stroke="#FFB859" stroke-width="4.2" stroke-linecap="round" opacity=".6"/><path d="M68.2 14.8A24 24 0 0 1 85.9 40.1" fill="none" stroke="#FFB859" stroke-width="4.2" stroke-linecap="round" opacity=".3"/></svg>`;
+function demoNight() {
+  // Decoratieve voorbeeldnacht (vaste vorm, geen echte gegevens)
+  let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const n = 64, w = 6, gap = 3, H = 90; let bars = "";
+  for (let i = 0; i < n; i++) {
+    const wave = Math.max(0, Math.sin(i / 6.5) * .9 + Math.sin(i / 2.3) * .25);
+    const v = Math.min(1, (.12 + wave * .75 + rnd() * .2) * (i > 20 && i < 30 ? .35 : 1));
+    const c = v > .78 ? C.episch : v > .55 ? C.luid : v > .32 ? C.licht : "rgba(244,241,234,.22)";
+    const h = Math.max(4, v * H);
+    bars += `<rect x="${i * (w + gap)}" y="${H - h}" width="${w}" height="${h}" rx="2" fill="${c}"/>`;
+  }
+  const pos = [["#4DD973", 22], ["#FF616B", 14], ["#528CFF", 30], ["#FF616B", 8], ["#4DD973", 26]];
+  let x = 0, line = "";
+  for (const [c, p] of pos) { const wd = (p / 100) * n * (w + gap); line += `<rect x="${x}" y="${H + 10}" width="${wd - 2}" height="8" rx="4" fill="${c}"/>`; x += wd; }
+  return `<svg viewBox="0 0 ${n * (w + gap)} ${H + 20}" preserveAspectRatio="none" aria-hidden="true">${bars}${line}</svg>`;
+}
 function viewLogin() {
   $("#top").hidden = true;
+  document.body.classList.add("auth-mode");
   app.innerHTML = `
-  <div class="center">
-    <svg class="hero-moon" viewBox="0 0 100 100" aria-hidden="true"><path d="M40.43 22.21A30 30 0 1 0 72.89 60.08A25 25 0 0 1 40.43 22.21Z" fill="#FFB859"/><path d="M64.6 28.3A10 10 0 0 1 72.0 38.9" fill="none" stroke="#FFB859" stroke-width="4.2" stroke-linecap="round"/><path d="M66.4 21.6A17 17 0 0 1 78.9 39.5" fill="none" stroke="#FFB859" stroke-width="4.2" stroke-linecap="round" opacity=".6"/><path d="M68.2 14.8A24 24 0 0 1 85.9 40.1" fill="none" stroke="#FFB859" stroke-width="4.2" stroke-linecap="round" opacity=".3"/></svg>
-    <h1 class="wordmark" style="font-size:44px">snore<em>dle</em></h1>
-    <p class="sub">Al je nachten op een groot scherm.</p>
-    <form class="card stack" id="f">
-      <label class="small muted" for="mail">E-mailadres (hetzelfde als in de app)</label>
-      <input id="mail" type="email" autocomplete="email" required placeholder="naam@voorbeeld.be">
-      <div id="codebox" hidden class="stack">
-        <label class="small muted" for="code">Code uit de e-mail</label>
-        <input id="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="123456">
+  <div class="auth">
+    <section class="auth-hero">
+      <div class="glow" aria-hidden="true"></div>
+      <div class="auth-brand">${MOON("auth-moon")}<span class="wordmark">snore<em>dle</em></span></div>
+      <h1 class="auth-title">Zie hoe je <em>écht</em> slaapt.</h1>
+      <p class="auth-lead">Al je nachten uit de app, groot en overzichtelijk op je computer of tablet.</p>
+      <div class="auth-demo">
+        <div class="row spread"><span class="small muted">Voorbeeldnacht · 23:14 – 07:02</span><span class="auth-score">18 <small>matig</small></span></div>
+        ${demoNight()}
+        <div class="legend"><span><i class="dot" style="background:${C.licht}"></i>Licht</span><span><i class="dot" style="background:${C.luid}"></i>Luid</span><span><i class="dot" style="background:${C.episch}"></i>Episch</span><span><i class="dot" style="background:#4DD973"></i>Zij</span><span><i class="dot" style="background:#FF616B"></i>Rug</span></div>
       </div>
-      <button class="btn" id="go" type="submit">Stuur me een code</button>
-      <p class="small muted" id="msg" style="margin:0">Geen wachtwoord nodig. Nog geen account? Dat wordt meteen aangemaakt.</p>
-    </form>
-    <p class="small muted" style="margin-top:18px"><a href="#/privacy">Hoe we met je gegevens omgaan</a></p>
+      <ul class="auth-points">
+        <li><b>📈</b><span><strong>Elke nacht in detail</strong>Volume, snurken, houding, hartslag, zuurstof en slaapfasen. Duid een periode aan en zoom in.</span></li>
+        <li><b>💡</b><span><strong>Wat helpt echt?</strong>Zie welke factoren en middelen je snurkscore omlaag halen.</span></li>
+        <li><b>🔒</b><span><strong>Privé in de EU</strong>Alleen jij ziet je gegevens. Geluidsopnames blijven op je iPhone.</span></li>
+      </ul>
+    </section>
+    <section class="auth-side">
+      <form class="auth-form" id="f">
+        <h2>Aanmelden</h2>
+        <p class="muted small" style="margin:-4px 0 6px">Gebruik hetzelfde e-mailadres als in de app.</p>
+        <label class="small muted" for="mail">E-mailadres</label>
+        <input id="mail" type="email" autocomplete="email" required placeholder="naam@voorbeeld.be">
+        <div id="codebox" hidden class="stack" style="margin-top:4px">
+          <label class="small muted" for="code">Code uit de e-mail</label>
+          <input id="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="123456" class="code-input">
+        </div>
+        <button class="btn wide" id="go" type="submit">Stuur me een code</button>
+        <p class="small muted" id="msg" style="margin:0">Geen wachtwoord nodig. Nog geen account? Dat wordt meteen aangemaakt.</p>
+        <ol class="auth-steps small muted">
+          <li>Vul je e-mailadres in</li><li>Typ de code uit de mail</li><li>Klaar, je nachten staan er</li>
+        </ol>
+        <p class="small muted" style="margin:0"><a href="#/privacy">Hoe we met je gegevens omgaan</a></p>
+      </form>
+    </section>
   </div>`;
   let sent = false;
   $("#f").onsubmit = async (e) => {
