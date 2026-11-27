@@ -387,13 +387,24 @@ final class SessionManager: ObservableObject {
         let end = session.end ?? .now
         let hk = HealthKitService.shared
         if !session.healthSynced {
-            let live = session.vitals.filter { $0.kind == .heartRate }.map(\.at)
-            for (kind, value, at, _) in await hk.vitals(from: session.start, to: end) {
-                if kind == .heartRate, live.contains(where: { abs($0.timeIntervalSince(at)) < 60 }) { continue }
-                session.vitals.append(VitalSample(at: at, kind: kind, value: value))
-            }
-            await hk.saveSleep(start: session.start, end: end)
+            // Eerst als klaar markeren: hangt of stopt dit, dan nooit elke opstart opnieuw proberen.
             session.healthSynced = true
+            try? context?.save()
+            // Een watch meet 's nachts duizenden hartslagen. Eén waarde per minuut (gemiddelde) is genoeg,
+            // minuten die de watch al live doorgaf overslaan, en alles in één keer toevoegen (niet één per één).
+            let liveMinutes = Set(session.vitals.filter { $0.kind == .heartRate }.map { Int($0.at.timeIntervalSince1970 / 60) })
+            var buckets: [String: (kind: VitalKind, sum: Double, n: Int, at: Date)] = [:]
+            for (kind, value, at, _) in await hk.vitals(from: session.start, to: end) {
+                let minute = Int(at.timeIntervalSince1970 / 60)
+                if kind == .heartRate, liveMinutes.contains(minute) { continue }
+                let key = "\(kind.rawValue)-\(minute)"
+                if let b = buckets[key] { buckets[key] = (kind, b.sum + value, b.n + 1, b.at) }
+                else { buckets[key] = (kind, value, 1, at) }
+            }
+            let new = buckets.values.sorted { $0.at < $1.at }.map { VitalSample(at: $0.at, kind: $0.kind, value: $0.sum / Double($0.n)) }
+            if !new.isEmpty { session.vitals += new }
+            DiagLog.shared.log("gezondheid", "\(new.count) metingen uit Gezondheid toegevoegd")
+            await hk.saveSleep(start: session.start, end: end)
         }
         // Echte slaapfasen (niet enkel "in bed") komen soms pas later: dan opnieuw ophalen en vervangen.
         if !session.stages.contains(where: { $0.stage != .inBed }) {
