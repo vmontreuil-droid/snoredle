@@ -136,11 +136,11 @@ struct SessionDetailView: View {
             GeometryReader { geo in
                 let frame = proxy.plotFrame.map { geo[$0] } ?? .zero
                 Rectangle().fill(.clear).contentShape(Rectangle())
-                    .gesture(DragGesture(minimumDistance: 0).onChanged { v in
-                        if let d: Date = proxy.value(atX: v.location.x - frame.minX) {
+                    .onTapGesture { loc in       // tikken (geen slepen: de pagina moet blijven scrollen)
+                        if let d: Date = proxy.value(atX: loc.x - frame.minX) {
                             picked = min(session.end ?? .now, max(session.start, d))
                         }
-                    })
+                    }
             }
         }
         .overlay(alignment: .topLeading) {
