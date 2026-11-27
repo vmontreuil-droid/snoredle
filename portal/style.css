@@ -147,6 +147,11 @@ body.auth-mode .foot { display: none; }
 .auth { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(380px, 1fr); min-height: 100dvh; }
 .auth-hero { position: relative; overflow: hidden; padding: clamp(32px, 6vw, 80px); display: flex; flex-direction: column; justify-content: center; gap: 22px;
   background: linear-gradient(160deg, var(--middernacht-2) 0%, var(--middernacht) 45%, var(--nacht) 100%); border-right: 1px solid var(--lijn); }
+.auth-hero::before { content: ""; position: absolute; inset: 0; background: url("img/slaapkamer.jpg") center / cover no-repeat; opacity: .55; }
+.auth-hero::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(90deg, rgba(11,14,35,.92) 0%, rgba(13,18,41,.72) 55%, rgba(13,18,41,.45) 100%),
+              linear-gradient(0deg, rgba(11,14,35,.85) 0%, rgba(11,14,35,0) 45%); }
+.auth-hero > * { z-index: 1; }
 .auth-hero .glow { position: absolute; width: 640px; height: 640px; right: -220px; top: -260px; border-radius: 50%;
   background: radial-gradient(circle, rgba(255,184,89,.20), rgba(255,184,89,0) 65%); pointer-events: none; }
 .auth-hero > * { position: relative; max-width: 560px; }
@@ -175,6 +180,7 @@ body.auth-mode .foot { display: none; }
 @media (max-width: 900px) {
   .auth { grid-template-columns: 1fr; min-height: auto; }
   .auth-hero { border-right: 0; border-bottom: 1px solid var(--lijn); padding: 28px 22px 26px; gap: 14px; align-items: center; text-align: center; }
+  .auth-hero::after { background: linear-gradient(180deg, rgba(11,14,35,.55) 0%, rgba(11,14,35,.92) 100%); }
   .auth-hero .glow { width: 420px; height: 420px; right: 50%; margin-right: -210px; top: -240px; }
   .auth-demo, .auth-points { display: none; }
   .auth-moon { width: 46px; height: 46px; }
