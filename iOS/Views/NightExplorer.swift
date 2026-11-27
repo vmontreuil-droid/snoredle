@@ -13,6 +13,13 @@ struct NightExplorerView: View {
     @State private var baseVisible: Double = 0
     @State private var scrollX: Date = .now
     @State private var selected: Date?
+    @State private var rangeMode = false
+    @State private var rangeA: Date?
+    @State private var rangeB: Date?
+    private var range: ClosedRange<Date>? {
+        guard let a = rangeA, let b = rangeB, abs(a.timeIntervalSince(b)) >= 30 else { return nil }
+        return min(a, b)...max(a, b)
+    }
 
     private var start: Date { session.start }
     private var end: Date { session.end ?? .now }
@@ -29,12 +36,15 @@ struct NightExplorerView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     zoomBar
-                    selectionCard
+                    modeBar
+                    if rangeMode { rangeCard } else { selectionCard }
                     panel("Geluid", "dB") { soundChart.frame(height: 170) }
                     if !positions.isEmpty { panel("Houding", nil) { positionChart.frame(height: 70) } }
                     if !hr.isEmpty { panel("Hartslag", "bpm") { lineChart(hr, color: .pink).frame(height: 110) } }
                     if !spo2.isEmpty { panel("Zuurstof", "%") { lineChart(spo2, color: .cyan, rule: 90).frame(height: 100) } }
-                    Text("Knijp met twee vingers om in te zoomen, veeg om te verschuiven, tik of sleep om een moment te kiezen.")
+                    Text(rangeMode
+                         ? "Sleep met één vinger over een grafiek om een periode aan te duiden. Knijp om in te zoomen."
+                         : "Tik op een grafiek om een moment te kiezen. Knijp om in te zoomen, veeg om te verschuiven.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 .padding()
@@ -76,6 +86,98 @@ struct NightExplorerView: View {
             }
             Spacer()
         }
+    }
+
+    // MARK: Moment of periode
+
+    private var modeBar: some View {
+        Picker("", selection: $rangeMode.animation(.snappy)) {
+            Label("Moment", systemImage: "hand.tap").tag(false)
+            Label("Periode", systemImage: "arrow.left.and.right").tag(true)
+        }
+        .pickerStyle(.segmented)
+        .onChange(of: rangeMode) { _, on in if on { selected = nil } else { rangeA = nil; rangeB = nil } }
+    }
+
+    private func overlaps(_ a: Date, _ b: Date, _ r: ClosedRange<Date>) -> TimeInterval {
+        max(0, min(b, r.upperBound).timeIntervalSince(max(a, r.lowerBound)))
+    }
+
+    @ViewBuilder private var rangeCard: some View {
+        if let r = range {
+            let dur = r.upperBound.timeIntervalSince(r.lowerBound)
+            let ev = events.filter { overlaps($0.start, max($0.end, $0.start.addingTimeInterval(1)), r) > 0 }
+            let snoreSec = ev.map { overlaps($0.start, $0.end, r) }.reduce(0, +)
+            let dbs = loud.filter { r.contains($0.at) }.map(\.decibel)
+            let hrs = hr.filter { r.contains($0.at) }.map(\.value)
+            let ox = spo2.filter { r.contains($0.at) }.map(\.value)
+            let sounds = session.nightSounds.filter { r.contains($0.start) }
+            let pos = positionMinutes(in: r)
+            GlassCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("\(r.lowerBound.formatted(date: .omitted, time: .shortened)) – \(r.upperBound.formatted(date: .omitted, time: .shortened))")
+                            .font(.title3.weight(.bold)).monospacedDigit()
+                        Text("· \(Int(dur / 60)) min").foregroundStyle(.secondary)
+                        Spacer()
+                        Button { withAnimation(.snappy) { visible = max(300, dur * 1.1); baseVisible = visible; scrollX = max(start, r.lowerBound.addingTimeInterval(-dur * 0.05)) } } label: {
+                            Image(systemName: "plus.magnifyingglass")
+                        }
+                        Button { rangeA = nil; rangeB = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                    }
+                    HStack(spacing: 16) {
+                        stat("\(Int(snoreSec / 60)) min", "gesnurkt (\(dur > 0 ? Int(snoreSec / dur * 100) : 0)%)", "waveform")
+                        if let m = dbs.max() { stat("\(Int(dbs.reduce(0, +) / Double(dbs.count)))–\(Int(m)) dB", "gem.–max", "speaker.wave.2") }
+                    }
+                    HStack(spacing: 16) {
+                        if !hrs.isEmpty { stat("\(Int(hrs.min()!))–\(Int(hrs.max()!))", "bpm (gem. \(Int(hrs.reduce(0, +) / Double(hrs.count))))", "heart.fill") }
+                        if let o = ox.min() { stat("\(Int(o))%", "laagste SpO₂", "lungs.fill") }
+                        if !sounds.isEmpty { stat("\(sounds.count)", "andere geluiden", "ear") }
+                    }
+                    if !pos.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Houding").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            ForEach(pos, id: \.0) { p, mins in
+                                HStack {
+                                    Circle().fill(Theme.color(p)).frame(width: 8, height: 8)
+                                    Text(p.label).font(.caption)
+                                    Spacer()
+                                    Text("\(Int(mins)) min").font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                    let top = ev.filter { $0.clipFileName != nil }.sorted { $0.peakDecibel > $1.peakDecibel }.prefix(5)
+                    if !top.isEmpty {
+                        Text("Luidste snurken in deze periode").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        ForEach(Array(top)) { e in
+                            clipRow(title: "\(e.start.formatted(date: .omitted, time: .shortened)) · \(e.intensity.label)",
+                                    detail: "\(Int(e.duration)) s · \(Int(e.peakDecibel)) dB\(e.wasNudged ? " · gewekt" : "")",
+                                    clip: e.clipFileName)
+                        }
+                    } else if ev.isEmpty {
+                        Text("Geen snurken in deze periode.").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .transition(.opacity)
+        } else {
+            GlassCard {
+                Label("Sleep met je vinger over een grafiek om een periode te kiezen.", systemImage: "hand.draw")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// Minuten per houding binnen een periode (elke meting telt tot de volgende, hoogstens 10 min).
+    private func positionMinutes(in r: ClosedRange<Date>) -> [(SleepPosition, Double)] {
+        var out: [SleepPosition: Double] = [:]
+        for (i, p) in positions.enumerated() {
+            let next = min(i + 1 < positions.count ? positions[i + 1].at : end, p.at.addingTimeInterval(600))
+            let o = overlaps(p.at, next, r)
+            if o > 0 { out[p.position, default: 0] += o / 60 }
+        }
+        return out.filter { $0.value >= 1 }.sorted { $0.value > $1.value }.map { ($0.key, $0.value) }
     }
 
     // MARK: Geselecteerd moment
@@ -169,10 +271,30 @@ struct NightExplorerView: View {
     private func timeline<C: View>(_ chart: C) -> some View {
         chart
             .chartXScale(domain: start...end)
-            .chartScrollableAxes(.horizontal)
+            .chartScrollableAxes(rangeMode ? [] : .horizontal)     // in periode-modus sleep je om te kiezen
             .chartXVisibleDomain(length: max(300, visible))
             .chartScrollPosition(x: $scrollX)
-            .chartXSelection(value: $selected)
+            .chartOverlay { proxy in
+                GeometryReader { geo in
+                    let frame = proxy.plotFrame.map { geo[$0] } ?? .zero
+                    let date: (CGFloat) -> Date? = { x in
+                        proxy.value(atX: x - frame.minX, as: Date.self).map { min(end, max(start, $0)) }
+                    }
+                    if rangeMode {
+                        Rectangle().fill(.clear).contentShape(Rectangle())
+                            .gesture(DragGesture(minimumDistance: 0)
+                                .onChanged { v in
+                                    if let a = date(v.startLocation.x), let b = date(v.location.x) { rangeA = a; rangeB = b }
+                                })
+                    } else {
+                        // Alleen tikken opvangen; vegen blijft scrollen.
+                        Rectangle().fill(.clear).contentShape(Rectangle())
+                            .onTapGesture { loc in
+                                if let d = date(loc.x) { withAnimation(.snappy) { selected = d } }
+                            }
+                    }
+                }
+            }
             .chartXAxis {
                 AxisMarks(values: .stride(by: axisStride, count: axisCount)) {
                     AxisGridLine().foregroundStyle(.white.opacity(0.06))
@@ -197,6 +319,7 @@ struct NightExplorerView: View {
                     .symbol { Image(systemName: n.kind.symbol).font(.system(size: 9)).foregroundStyle(.white) }
             }
             if let s = selected { RuleMark(x: .value("Gekozen", s)).foregroundStyle(Theme.accent).lineStyle(StrokeStyle(lineWidth: 1.5)) }
+            if let r = range { RectangleMark(xStart: .value("Van", r.lowerBound), xEnd: .value("Tot", r.upperBound)).foregroundStyle(Theme.accent.opacity(0.18)) }
         })
     }
 
@@ -208,6 +331,7 @@ struct NightExplorerView: View {
                     .foregroundStyle(Theme.color(p.position))
             }
             if let s = selected { RuleMark(x: .value("Gekozen", s)).foregroundStyle(Theme.accent) }
+            if let r = range { RectangleMark(xStart: .value("Van", r.lowerBound), xEnd: .value("Tot", r.upperBound)).foregroundStyle(Theme.accent.opacity(0.18)) }
         }
         .chartYAxis(.hidden))
     }
@@ -223,6 +347,7 @@ struct NightExplorerView: View {
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
             }
             if let s = selected { RuleMark(x: .value("Gekozen", s)).foregroundStyle(Theme.accent) }
+            if let r = range { RectangleMark(xStart: .value("Van", r.lowerBound), xEnd: .value("Tot", r.upperBound)).foregroundStyle(Theme.accent.opacity(0.18)) }
         }
         .chartYScale(domain: .automatic(includesZero: false)))
     }

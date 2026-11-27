@@ -131,8 +131,18 @@ struct SessionDetailView: View {
         .chartXAxis { AxisMarks(values: .stride(by: .hour)) { AxisValueLabel(format: .dateTime.hour()) } }
         .chartYAxisLabel("dB")
         .chartXScale(domain: session.start...(session.end ?? .now))
-        .chartXSelection(value: $picked)
-        .chartOverlay { _ in EmptyView() }
+        // Tikken kiest een moment dat blijft staan (niet vinger vasthouden); slepen schuift mee.
+        .chartOverlay { proxy in
+            GeometryReader { geo in
+                let frame = proxy.plotFrame.map { geo[$0] } ?? .zero
+                Rectangle().fill(.clear).contentShape(Rectangle())
+                    .gesture(DragGesture(minimumDistance: 0).onChanged { v in
+                        if let d: Date = proxy.value(atX: v.location.x - frame.minX) {
+                            picked = min(session.end ?? .now, max(session.start, d))
+                        }
+                    })
+            }
+        }
         .overlay(alignment: .topLeading) {
             if picked == nil {
                 Text("Tik op de grafiek").font(.caption2).foregroundStyle(.tertiary).padding(4)
