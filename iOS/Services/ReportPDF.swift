@@ -7,13 +7,14 @@ import Charts
 enum ReportPDF {
     static let pageSize = CGSize(width: 595, height: 842)      // A4 in punten
 
-    /// Rapport van één nacht (4 pagina's).
+    /// Rapport van één nacht (5 pagina's).
     static func night(_ s: SleepSession) -> URL {
         let name = "Snoredle-nacht-\(s.start.formatted(.iso8601.year().month().day())).pdf"
         let pages: [AnyView] = [
             AnyView(NightOverviewPage(s: s)),
             AnyView(NightSoundPositionPage(s: s)),
-            AnyView(NightBodyPage(s: s)),
+            AnyView(NightBodyPage(s: s, part: 1)),
+            AnyView(NightBodyPage(s: s, part: 2)),
             AnyView(NightEventsPage(s: s)),
         ]
         return render(pages, title: "Nachtrapport", file: name)
@@ -38,6 +39,7 @@ enum ReportPDF {
             let view = ReportPage(title: title, number: i + 1, total: pages.count) { page }
                 .frame(width: pageSize.width, height: pageSize.height)
                 .environment(\.colorScheme, .dark)
+                .environment(\.locale, Locale(identifier: "nl_BE"))
             let r = ImageRenderer(content: view)
             r.proposedSize = .init(pageSize)
             r.render { _, draw in
@@ -63,7 +65,8 @@ private enum R {
     static func stage(_ s: SleepStage) -> Color {
         switch s { case .awake: .orange; case .rem: .cyan; case .core, .asleep: .blue; case .deep: .indigo; case .inBed: .gray }
     }
-    static func time(_ d: Date) -> String { d.formatted(date: .omitted, time: .shortened) }
+    static let nl = Locale(identifier: "nl_BE")
+    static func time(_ d: Date) -> String { d.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute().locale(nl)) }
     static func mins(_ seconds: Double) -> String {
         let m = Int(seconds / 60)
         return m >= 60 ? "\(m / 60) u \(m % 60) min" : "\(m) min"
@@ -117,11 +120,11 @@ private struct Tile: View {
     var color: Color = .white
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(value).font(.system(size: 17, weight: .bold, design: .rounded)).foregroundStyle(color)
+            Text(value).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(color)
                 .lineLimit(1).minimumScaleFactor(0.6)
             Text(label).font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(2)
         }
-        .padding(10)
+        .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(R.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
@@ -176,14 +179,14 @@ private struct NightOverviewPage: View {
     let s: SleepSession
     var body: some View {
         let end = s.end ?? .now
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Nachtrapport").font(.system(size: 26, weight: .bold, design: .rounded))
                 Text(s.nightTitle.capitalized + " · \(R.time(s.start)) – \(R.time(end))")
                     .font(.system(size: 13)).foregroundStyle(.secondary)
             }
             HStack(alignment: .center, spacing: 18) {
-                PDFScoreRing(score: s.snoreScore).frame(width: 110, height: 110)
+                PDFScoreRing(score: s.snoreScore).frame(width: 92, height: 92)
                 VStack(alignment: .leading, spacing: 6) {
                     Text("\(SnoreAnalysis.scoreLabel(s.snoreScore)) gesnurkt")
                         .font(.system(size: 20, weight: .bold, design: .rounded))
@@ -215,13 +218,23 @@ private struct NightOverviewPage: View {
             if !s.remedies.isEmpty {
                 Card(title: "Gebruikte middelen") { ChipRows(items: s.remedies.map { ($0.label, $0.symbol) }, color: .green) }
             }
-            if !s.pauses.isEmpty {
-                Card(title: "Pauzes (niet gemeten)") {
-                    Text(s.pauses.map { "\(R.time($0.start))–\(R.time($0.end))" }.joined(separator: " · ")).font(.system(size: 10))
+            let extra: [(String, String)] = [
+                s.pauses.isEmpty ? nil : ("Pauzes (niet gemeten)", s.pauses.map { "\(R.time($0.start))–\(R.time($0.end))" }.joined(separator: " · ")),
+                (s.alarmNote?.isEmpty == false) ? ("Wekker", s.alarmNote!) : nil,
+                s.note.isEmpty ? nil : ("Notitie", s.note),
+            ].compactMap { $0 }
+            if !extra.isEmpty {
+                Card(title: "Verder") {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(extra, id: \.0) { k, v in
+                            HStack(alignment: .top) {
+                                Text(k).font(.system(size: 10, weight: .semibold)).frame(width: 120, alignment: .leading)
+                                Text(v).font(.system(size: 10)).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
                 }
             }
-            if let a = s.alarmNote, !a.isEmpty { Card(title: "Wekker") { Text(a).font(.system(size: 10)) } }
-            if !s.note.isEmpty { Card(title: "Notitie") { Text(s.note).font(.system(size: 10)) } }
         }
     }
 }
@@ -252,7 +265,7 @@ private struct NightSoundPositionPage: View {
                     }
                 }
                 .chartXScale(domain: s.start...end)
-                .chartXAxis { AxisMarks(values: .stride(by: .hour)) { AxisGridLine().foregroundStyle(R.line); AxisValueLabel(format: .dateTime.hour()) } }
+                .chartXAxis { AxisMarks(values: .stride(by: .hour)) { AxisGridLine().foregroundStyle(R.line); AxisValueLabel(format: .dateTime.hour(.twoDigits(amPM: .omitted)).locale(R.nl)) } }
                 .chartYAxis { AxisMarks { AxisGridLine().foregroundStyle(R.line); AxisValueLabel() } }
                 .frame(height: 170)
                 HStack(spacing: 10) {
@@ -274,7 +287,7 @@ private struct NightSoundPositionPage: View {
                     }
                     .chartXScale(domain: s.start...end)
                     .chartYAxis(.hidden)
-                    .chartXAxis { AxisMarks(values: .stride(by: .hour)) { AxisValueLabel(format: .dateTime.hour()) } }
+                    .chartXAxis { AxisMarks(values: .stride(by: .hour)) { AxisValueLabel(format: .dateTime.hour(.twoDigits(amPM: .omitted)).locale(R.nl)) } }
                     .frame(height: 50)
                 }
                 Card(title: "Per houding") {
@@ -315,15 +328,26 @@ private struct NightSoundPositionPage: View {
 
 private struct NightBodyPage: View {
     let s: SleepSession
+    let part: Int            // 1 = slaapfasen + hartslag, 2 = zuurstof + ademhaling + beweging
     var body: some View {
         let end = s.end ?? .now
         let stages = s.stages.filter { $0.stage != .inBed }.sorted { $0.start < $1.start }
         let hr = s.vitals.filter { $0.kind == .heartRate }.sorted { $0.at < $1.at }
         let ox = s.vitals.filter { $0.kind == .oxygenSaturation }.sorted { $0.at < $1.at }
         let resp = s.vitals.filter { $0.kind == .respiratoryRate }.sorted { $0.at < $1.at }
+        let move = s.vitals.filter { $0.kind == .movement }.sorted { $0.at < $1.at }
         VStack(alignment: .leading, spacing: 14) {
-            Text("Slaap en lichaam").font(.system(size: 22, weight: .bold, design: .rounded))
-            if !stages.isEmpty {
+            Text(part == 1 ? "Slaap en hartslag" : "Zuurstof en ademhaling").font(.system(size: 22, weight: .bold, design: .rounded))
+            if part == 2 {
+                if !ox.isEmpty { vitalCard("Zuurstof (SpO₂)", ox, unit: "%", color: .cyan, start: s.start, end: end, rule: 90) }
+                else { Card(title: "Zuurstof") { Text("Geen zuurstofmetingen voor deze nacht.").font(.system(size: 10)).foregroundStyle(.secondary) } }
+                if !resp.isEmpty { vitalCard("Ademhaling", resp, unit: "/min", color: .mint, start: s.start, end: end) }
+                if !move.isEmpty { vitalCard("Beweging (watch)", move, unit: "", color: .orange, start: s.start, end: end) }
+                Card(title: "Hoe lees je dit?") {
+                    Text("Zuurstof (SpO₂) ligt in je slaap meestal tussen 94 en 99%. Regelmatig onder 90%, samen met veel snurken of mogelijke ademstops, is een reden om met je huisarts te praten. De watch meet niet continu: losse lage waarden kunnen ook door een losse band komen.")
+                        .font(.system(size: 9.5)).foregroundStyle(.secondary)
+                }
+            } else if !stages.isEmpty {
                 Card(title: "Slaapfasen (Apple Watch via Gezondheid)") {
                     Chart(stages, id: \.start) { x in
                         BarMark(xStart: .value("Start", x.start), xEnd: .value("Einde", x.end), y: .value("Fase", x.stage.label))
@@ -331,7 +355,7 @@ private struct NightBodyPage: View {
                     }
                     .chartXScale(domain: min(s.start, stages.first!.start)...max(end, stages.last!.end))
                     .chartYScale(domain: ["Wakker", "REM", "Kern", "Diep"])
-                    .chartXAxis { AxisMarks(values: .stride(by: .hour)) { AxisGridLine().foregroundStyle(R.line); AxisValueLabel(format: .dateTime.hour()) } }
+                    .chartXAxis { AxisMarks(values: .stride(by: .hour)) { AxisGridLine().foregroundStyle(R.line); AxisValueLabel(format: .dateTime.hour(.twoDigits(amPM: .omitted)).locale(R.nl)) } }
                     .frame(height: 120)
                     HStack(spacing: 8) {
                         ForEach([SleepStage.deep, .core, .rem, .awake], id: \.self) { st in
@@ -343,9 +367,10 @@ private struct NightBodyPage: View {
             } else {
                 Card(title: "Slaapfasen") { Text("Geen slaapfasen gevonden in Gezondheid voor deze nacht.").font(.system(size: 10)).foregroundStyle(.secondary) }
             }
-            if !hr.isEmpty { vitalCard("Hartslag", hr, unit: "bpm", color: .pink, start: s.start, end: end) }
-            if !ox.isEmpty { vitalCard("Zuurstof (SpO₂)", ox, unit: "%", color: .cyan, start: s.start, end: end, rule: 90) }
-            if !resp.isEmpty { vitalCard("Ademhaling", resp, unit: "/min", color: .mint, start: s.start, end: end) }
+            if part == 1 {
+                if !hr.isEmpty { vitalCard("Hartslag", hr, unit: "bpm", color: .pink, start: s.start, end: end) }
+                else { Card(title: "Hartslag") { Text("Geen hartslag gemeten.").font(.system(size: 10)).foregroundStyle(.secondary) } }
+            }
         }
     }
 
@@ -361,9 +386,9 @@ private struct NightBodyPage: View {
             }
             .chartXScale(domain: start...end)
             .chartYScale(domain: .automatic(includesZero: false))
-            .chartXAxis { AxisMarks(values: .stride(by: .hour)) { AxisGridLine().foregroundStyle(R.line); AxisValueLabel(format: .dateTime.hour()) } }
+            .chartXAxis { AxisMarks(values: .stride(by: .hour)) { AxisGridLine().foregroundStyle(R.line); AxisValueLabel(format: .dateTime.hour(.twoDigits(amPM: .omitted)).locale(R.nl)) } }
             .chartYAxis { AxisMarks { AxisGridLine().foregroundStyle(R.line); AxisValueLabel() } }
-            .frame(height: 95)
+            .frame(height: 120)
             HStack(spacing: 8) {
                 Tile(value: "\(Int(vals.min()!)) \(unit)", label: "laagste")
                 Tile(value: "\(Int(avg.rounded())) \(unit)", label: "gemiddeld")
@@ -487,17 +512,25 @@ private struct PeriodSummaryPage: View {
                 .chartYAxis { AxisMarks { AxisGridLine().foregroundStyle(R.line); AxisValueLabel() } }
                 .frame(height: 150)
             }
-            Card(title: "Snurktijd en slaapduur per nacht") {
+            Card(title: "Snurktijd per nacht (% van je slaap)") {
                 Chart(nights, id: \.id) { s in
+                    AreaMark(x: .value("Nacht", s.start, unit: .day), y: .value("%", s.snorePercentage * 100))
+                        .foregroundStyle(Theme.accent.opacity(0.25)).interpolationMethod(.monotone)
                     LineMark(x: .value("Nacht", s.start, unit: .day), y: .value("%", s.snorePercentage * 100))
-                        .foregroundStyle(by: .value("", "Snurktijd (%)")).symbol(.circle)
-                    LineMark(x: .value("Nacht", s.start, unit: .day), y: .value("u", s.sleepDuration / 3600 * 10))
-                        .foregroundStyle(by: .value("", "Slaap (u × 10)")).symbol(.square)
+                        .foregroundStyle(Theme.accent).symbol(.circle).interpolationMethod(.monotone)
                 }
-                .chartForegroundStyleScale(["Snurktijd (%)": Theme.accent, "Slaap (u × 10)": Color.cyan])
                 .chartXAxis { AxisMarks { AxisValueLabel(format: .dateTime.day().month(.abbreviated)) } }
                 .chartYAxis { AxisMarks { AxisGridLine().foregroundStyle(R.line); AxisValueLabel() } }
-                .frame(height: 140)
+                .frame(height: 120)
+            }
+            Card(title: "Geslapen per nacht (uren)") {
+                Chart(nights, id: \.id) { s in
+                    BarMark(x: .value("Nacht", s.start, unit: .day), y: .value("u", s.sleepDuration / 3600))
+                        .foregroundStyle(Color.cyan.opacity(0.8))
+                }
+                .chartXAxis { AxisMarks { AxisValueLabel(format: .dateTime.day().month(.abbreviated)) } }
+                .chartYAxis { AxisMarks { AxisGridLine().foregroundStyle(R.line); AxisValueLabel() } }
+                .frame(height: 100)
             }
         }
     }
@@ -582,6 +615,7 @@ private struct PeriodInsightsPage: View {
                             }
                     }
                     .chartXAxis { AxisMarks { AxisGridLine().foregroundStyle(R.line); AxisValueLabel() } }
+                    .chartYAxis { AxisMarks(position: .leading) { AxisValueLabel() } }
                     .chartXAxisLabel("% van de tijd in die houding gesnurkt")
                     .frame(height: CGFloat(30 * pos.count + 30))
                 }
