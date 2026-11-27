@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Snoredle · portaal</title>
+  <meta name="description" content="Bekijk al je nachten van Snoredle: snurken, houding, hartslag, zuurstof en slaapfasen.">
+  <meta name="theme-color" content="#0b0e23">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <link rel="preload" href="fonts/fredoka-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <script src="vendor/chart.umd.js"></script>
+  <script src="vendor/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <script src="vendor/hammer.min.js"></script>
+  <script src="vendor/chartjs-plugin-zoom.min.js"></script>
+  <script src="vendor/supabase.js"></script>
+</head>
+<body>
+  <div class="stars" aria-hidden="true"></div>
+  <header class="top" id="top" hidden>
+    <a class="brand" href="#/" aria-label="Snoredle">
+      <svg viewBox="0 0 100 100" aria-hidden="true"><path d="M40.43 22.21A30 30 0 1 0 72.89 60.08A25 25 0 0 1 40.43 22.21Z" fill="#FFB859"/><path d="M64.6 28.3A10 10 0 0 1 72.0 38.9" fill="none" stroke="#FFB859" stroke-width="6" stroke-linecap="round"/><path d="M66.4 21.6A17 17 0 0 1 78.9 39.5" fill="none" stroke="#FFB859" stroke-width="6" stroke-linecap="round" opacity=".6"/></svg>
+      <span class="wordmark">snore<em>dle</em></span>
+    </a>
+    <nav>
+      <a href="#/" data-nav="dash">Overzicht</a>
+      <a href="#/nachten" data-nav="nights">Nachten</a>
+      <a href="#/inzichten" data-nav="insights">Inzichten</a>
+      <a href="#/account" data-nav="account">Account</a>
+    </nav>
+  </header>
+  <main id="app" aria-live="polite"><div class="loading">Laden…</div></main>
+  <footer class="foot">
+    Snoredle meet geluid en beweging; dit is geen medische diagnose. ·
+    <a href="#/privacy">Privacy</a>
+  </footer>
+  <script src="config.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

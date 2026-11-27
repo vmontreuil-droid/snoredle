@@ -15,7 +15,7 @@ struct PortalView: View {
     var body: some View {
         Form {
             Section {
-                Text("Bekijk al je nachten op een grote scherm via het Snoredle-portaal, ook op je computer. Na elke nacht stuurt de app je meting automatisch door.")
+                Text("Bekijk al je nachten op een groot scherm via het Snoredle-portaal, ook op je computer. Na elke nacht stuurt de app je meting automatisch door.")
                     .font(.footnote).foregroundStyle(.secondary)
                 if !SyncConfig.isConfigured {
                     Label("Het portaal wordt nog ingesteld. Probeer het binnenkort opnieuw.", systemImage: "hourglass")
@@ -55,7 +55,7 @@ struct PortalView: View {
                     Text("Wissen in het portaal laat je nachten op deze iPhone staan.")
                 }
             } else {
-                Section("Aanmelden") {
+                Section {
                     TextField("E-mailadres", text: $email)
                         .keyboardType(.emailAddress).textContentType(.emailAddress)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -69,6 +69,8 @@ struct PortalView: View {
                         Button("Stuur me een code") { Task { codeSent = await sync.sendCode(to: email) } }
                             .disabled(!email.contains("@") || sync.busy || !SyncConfig.isConfigured)
                     }
+                } header: {
+                    Text("Aanmelden")
                 } footer: {
                     Text("Geen wachtwoord nodig: je krijgt telkens een code per e-mail. Met hetzelfde adres meld je je aan op het portaal.")
                 }
