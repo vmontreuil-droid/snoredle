@@ -65,7 +65,7 @@ struct SessionDetailView: View {
         .task(id: session.snoreScore) {
             // Eén keer per nacht klaarzetten, niet bij elke schermverversing.
             shareImage = NightShareCard.image(for: session)
-            sharePDF = ExportService.pdf([session])
+            sharePDF = ReportPDF.night(session)
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -76,7 +76,7 @@ struct SessionDetailView: View {
                         }
                     }
                     if let pdf = sharePDF {
-                        ShareLink(item: pdf) { Label("Rapport (PDF)", systemImage: "doc.richtext") }
+                        ShareLink(item: pdf) { Label("Volledig nachtrapport (PDF)", systemImage: "doc.richtext") }
                     }
                     if let h = highlight {
                         ShareLink(item: ClipRecorder.url(for: h.clip),

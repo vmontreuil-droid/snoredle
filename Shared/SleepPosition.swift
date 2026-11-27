@@ -53,6 +53,8 @@ public enum SleepPosition: String, Codable, CaseIterable, Identifiable, Sendable
         }
     }
 
+    /// Echte lighouding (geen rechtop of onbekend).
+    public var isLying: Bool { self != .upright && self != .unknown }
     public var isStomach: Bool { self == .stomach || self == .stomachLeft || self == .stomachRight }
 
     /// Posities die je kalibreert.

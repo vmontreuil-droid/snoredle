@@ -145,7 +145,7 @@ struct TrendsView: View {
                         HStack {
                             if store.isPlus {
                                 if let pdf = reportURL {
-                                    ShareLink(item: pdf) { Label("Rapport voor arts (PDF)", systemImage: "doc.richtext") }
+                                    ShareLink(item: pdf) { Label("Volledig rapport (PDF)", systemImage: "doc.richtext") }
                                 } else { ProgressView() }
                                 Spacer()
                                 if let csv = csvURL { ShareLink(item: csv) { Label("CSV", systemImage: "tablecells") } }
@@ -159,7 +159,7 @@ struct TrendsView: View {
             .background(NightBackground())
             .navigationTitle("Inzichten")
             .task(id: "\(range)-\(done.count)") {
-                reportURL = ExportService.pdf(done)
+                reportURL = ReportPDF.overview(done)
                 csvURL = ExportService.csv(done)
             }
         }
