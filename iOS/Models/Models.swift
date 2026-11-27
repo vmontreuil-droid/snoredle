@@ -34,6 +34,8 @@ final class SleepSession {
     var pausesRaw: [Double] = []            // paren (start, einde) als timeIntervalSince1970
     /// Gegevens uit Gezondheid (zuurstof, ademhaling, slaapfasen) zijn opgehaald.
     var healthSynced: Bool = false
+    /// Laatste keer naar het portaal gestuurd (nil = nog niet).
+    var syncedAt: Date?
 
     init(start: Date = .now) {
         self.id = UUID()

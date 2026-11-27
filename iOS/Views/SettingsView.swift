@@ -15,6 +15,9 @@ struct SettingsView: View {
                 Section {
                     if store.isPlus { Label("Snoredle Plus actief", systemImage: "checkmark.seal.fill") }
                     else { NavigationLink("Snoredle Plus") { PaywallView() } }
+                    NavigationLink { PortalView() } label: {
+                        Label("Portaal (al je nachten op de computer)", systemImage: "globe")
+                    }
                 }
 
                 Section("Detectie") {

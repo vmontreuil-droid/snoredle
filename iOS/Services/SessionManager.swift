@@ -348,9 +348,12 @@ final class SessionManager: ObservableObject {
         }
         session.alarmNote = AlarmService.shared.lastWakeReason
         SnoreAnalysis.summarize(session)
+        session.syncedAt = nil
         try? context?.save()
         LiveActivityService.shared.end(score: session.snoreScore)
         if let ctx = context { WidgetBridge.publish(context: ctx); NotificationService.shared.refreshWeekly(context: ctx) }
+        // Nacht meteen naar het portaal (als de gebruiker dat aanzette).
+        if let ctx = context { Task { await SyncService.shared.syncPending(context: ctx) } }
 
         let favorites = Set((try? context?.fetch(FetchDescriptor<SnoreEvent>(predicate: #Predicate<SnoreEvent> { $0.isFavorite })))?
             .compactMap(\.clipFileName) ?? [])

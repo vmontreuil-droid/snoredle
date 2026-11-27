@@ -54,7 +54,12 @@ struct SnoredleApp: App {
                 .preferredColorScheme(.dark)
                 .onChange(of: scenePhase) { _, p in
                     lock.scenePhaseChanged(p)
-                    if p == .active { Task { await manager.backfillHealth() } }
+                    if p == .active {
+                        Task {
+                            await manager.backfillHealth()
+                            await SyncService.shared.syncPending(context: AppData.container.mainContext)
+                        }
+                    }
                 }
         }
         .modelContainer(container)
