@@ -16,6 +16,8 @@ protocol WearableProvider: AnyObject {
     func calibrate(_ position: SleepPosition)
     func send(profile: CalibrationProfile)
     func sendState(recording: Bool, pausedUntil: Date?)
+    func beginCalibration() async -> Bool
+    func endCalibration()
 }
 
 struct WearableCapabilities: OptionSet {
@@ -46,6 +48,8 @@ extension WearableProvider {
     func calibrate(_ position: SleepPosition) {}
     func send(profile: CalibrationProfile) {}
     func sendState(recording: Bool, pausedUntil: Date?) {}
+    func beginCalibration() async -> Bool { false }
+    func endCalibration() {}
 }
 
 /// Beheert alle gekoppelde wearables tegelijk en bundelt hun data.
@@ -100,6 +104,13 @@ final class WearableHub: ObservableObject {
     }
 
     func calibrate(_ pos: SleepPosition) { active.forEach { $0.calibrate(pos) } }
+    /// Watch-app opstarten en wakker houden zolang je via de iPhone kalibreert.
+    func beginCalibration() async -> Bool {
+        var ok = false
+        for p in providers where p.capabilities.contains(.calibration) { if await p.beginCalibration() { ok = true } }
+        return ok
+    }
+    func endCalibration() { providers.filter { $0.capabilities.contains(.calibration) }.forEach { $0.endCalibration() } }
 
     private func handle(_ e: WearableEvent, from source: String) {
         switch e {

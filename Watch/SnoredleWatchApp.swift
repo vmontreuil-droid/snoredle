@@ -28,8 +28,13 @@ final class WatchAppDelegate: NSObject, WKApplicationDelegate {
     func handle(_ workoutConfiguration: HKWorkoutConfiguration) {
         _ = WatchConnector.shared
         Task { @MainActor in
-            // Begin meteen; de instellingen volgen via het startSession-bericht.
-            NightTracker.shared.start(id: UUID(), settings: WatchSettings())
+            if workoutConfiguration.activityType == .flexibility {
+                // Kalibreren via de iPhone, geen nacht.
+                NightTracker.shared.beginCalibrationMode()
+            } else {
+                // Begin meteen; de instellingen volgen via het startSession-bericht.
+                NightTracker.shared.start(id: UUID(), settings: WatchSettings())
+            }
         }
     }
 }
@@ -74,15 +79,14 @@ struct WatchHomeView: View {
                     Image(systemName: "exclamationmark.triangle.fill").font(.largeTitle).foregroundStyle(.orange)
                     Text(a).font(.footnote).multilineTextAlignment(.center)
                     Button("OK") { t.alertText = nil }
-                } else if let g = t.guidedStep {
-                    Text("Lig \(g.instruction)").font(.headline).multilineTextAlignment(.center)
-                    Image(systemName: g.symbol).font(.largeTitle).foregroundStyle(.orange)
-                    Text("\(t.guidedCountdown)").font(.title.bold()).monospacedDigit()
-                    Text(t.guidedCountdown > 5 ? "Stil gaan liggen…" : "Meten…").font(.footnote).foregroundStyle(.secondary)
                 } else if let c = t.calibrating {
                     Text("Stil blijven liggen…").font(.headline)
-                    Image(systemName: c.symbol).font(.largeTitle)
+                    Image(systemName: c.symbol).font(.largeTitle).foregroundStyle(.orange)
                     Text(c.label)
+                } else if t.calibMode {
+                    Image(systemName: "iphone.radiowaves.left.and.right").font(.largeTitle).foregroundStyle(.orange)
+                    Text("Kalibreren").font(.headline)
+                    Text("Volg de stem van je iPhone").font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 } else if t.phoneRecording || t.isTracking {
                     if let until = t.pausedUntil, until > .now {
                         Image(systemName: "pause.circle.fill").font(.largeTitle).foregroundStyle(.orange)
@@ -100,10 +104,6 @@ struct WatchHomeView: View {
                     Image(systemName: "moon.zzz.fill").font(.largeTitle).foregroundStyle(.orange)
                     Text("Snoredle").font(.headline)
                     Button("Start de nacht") { t.request(.start) }.tint(.orange)
-                    Text(t.profile.isComplete ? "Houdingen gekalibreerd ✓" : "Nog niet gekalibreerd")
-                        .font(.footnote).foregroundStyle(.secondary)
-                    Button("Kalibreer houdingen") { t.runGuidedCalibration() }
-                    Button("Test tikje") { t.nudge(.medium) }
                 }
             }
         }

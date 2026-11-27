@@ -10,6 +10,7 @@ public enum WatchMessage: Codable, Sendable {
     case startCalibration(position: SleepPosition)
     case calibrationProfile(CalibrationProfile)
     case sessionState(recording: Bool, pausedUntil: Date?)
+    case calibrationMode(Bool)                       // kalibreren via de iPhone: watch blijft actief
 
     /// watch → iPhone
     case positionSample(PositionSamplePayload)

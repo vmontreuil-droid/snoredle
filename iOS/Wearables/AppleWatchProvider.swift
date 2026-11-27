@@ -143,7 +143,29 @@ final class AppleWatchProvider: NSObject, WearableProvider, WCSessionDelegate {
             replyHandler(Data())
         }
     }
-    func calibrate(_ position: SleepPosition) { send(.startCalibration(position: position), reliable: false) }
+    func calibrate(_ position: SleepPosition) { send(.startCalibration(position: position), reliable: true) }
+
+    /// Start Snoredle op de watch in kalibratiemodus (workout van het type "flexibility",
+    /// zodat de watch weet dat het géén nacht is) en wacht tot hij bereikbaar is.
+    func beginCalibration() async -> Bool {
+        let config = HKWorkoutConfiguration()
+        config.activityType = .flexibility
+        config.locationType = .indoor
+        let launched: Bool = await withCheckedContinuation { cont in
+            HKHealthStore().startWatchApp(with: config) { ok, error in
+                DiagLog.shared.log("kalibratie", "watch-app starten: \(ok ? "gelukt" : "mislukt")\(error.map { " – \($0.localizedDescription)" } ?? "")")
+                cont.resume(returning: ok)
+            }
+        }
+        send(.calibrationMode(true), reliable: true)
+        for _ in 0..<24 {
+            if session?.isReachable == true { return true }
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+        DiagLog.shared.log("kalibratie", "watch niet bereikbaar (gestart: \(launched))")
+        return session?.isReachable == true
+    }
+    func endCalibration() { send(.calibrationMode(false), reliable: true) }
     func send(profile: CalibrationProfile) {
         // applicationContext overleeft herstarts: de watch heeft altijd het laatste profiel.
         guard let s = session, s.activationState == .activated,

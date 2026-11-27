@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 struct SettingsView: View {
     @EnvironmentObject var s: AppSettings
@@ -190,67 +191,215 @@ struct SettingsView: View {
     }
 }
 
-/// Je ligt elke houding 10 s in bed met je watch om; de watch meet de zwaartekrachtrichting.
+/// Kalibratie via de iPhone, houding per houding en op jouw tempo:
+/// je drukt op Start, krijgt 10 s om te gaan liggen (hardop afgeteld), de watch meet 5 s en stopt.
+/// Daarna toont het scherm de volgende houding met opnieuw een Start-knop, tot het einde.
 struct CalibrationView: View {
     @EnvironmentObject var hub: WearableHub
+    @EnvironmentObject var session: SessionManager
     @Environment(\.dismiss) private var dismiss
-    @State private var step = 0
-    @State private var countdown = 0
-    @State private var failed = false
 
-    var position: SleepPosition? { step < SleepPosition.calibratable.count ? SleepPosition.calibratable[step] : nil }
+    enum Step: Equatable { case idle, getReady(Int), measuring, ok, failed }
+
+    private let positions = SleepPosition.calibratable
+    @State private var index = 0
+    @State private var step: Step = .idle
+    @State private var done: [SleepPosition: Bool] = [:]
+    @State private var connecting = false
+    @State private var connected = false
+    @State private var connectError: String?
+    @State private var speak = true
+    @State private var runner: Task<Void, Never>?
+    @State private var voice = CalibrationVoice()
+
+    private var position: SleepPosition? { index < positions.count ? positions[index] : nil }
+    private var busy: Bool { if case .getReady = step { return true }; return step == .measuring }
+    private var nightRunning: Bool { session.state != .idle }
 
     var body: some View {
-        VStack(spacing: 20) {
-            Text("Kalibratie").font(.system(.largeTitle, design: .rounded).bold())
+        VStack(spacing: 18) {
+            HStack {
+                Text("Kalibratie").font(.system(.title, design: .rounded).bold())
+                Spacer()
+                Toggle(isOn: $speak) { Image(systemName: speak ? "speaker.wave.2.fill" : "speaker.slash.fill") }
+                    .toggleStyle(.button).tint(Theme.accent).accessibilityLabel("Instructies hardop")
+            }
+            progressDots
+
             if let p = position {
-                Text("Houding \(step + 1) van \(SleepPosition.calibratable.count)").font(.footnote).foregroundStyle(.secondary)
-                Image(systemName: p.symbol).font(.system(size: 56)).foregroundStyle(Theme.accent)
+                Spacer(minLength: 0)
+                Text("Houding \(index + 1) van \(positions.count)").font(.footnote).foregroundStyle(.secondary)
+                Image(systemName: p.symbol).font(.system(size: 64)).foregroundStyle(Theme.accent)
+                    .frame(height: 80)
+                Text(p.label).font(.system(.title2, design: .rounded).bold())
                 Text("Ga \(p.instruction) liggen, zoals je slaapt, met je watch om.")
-                    .multilineTextAlignment(.center)
-                if !hub.watchReachable {
-                    Label("Doe je watch om en open Snoredle erop. Dan kan je beginnen.", systemImage: "applewatch.slash")
-                        .font(.footnote).foregroundStyle(.orange).multilineTextAlignment(.center)
-                }
-                if countdown > 0 {
-                    Text("\(countdown)").font(.system(size: 56, weight: .bold, design: .rounded)).monospacedDigit()
-                    Text(countdown > 5 ? "Stil gaan liggen…" : "Meten…").font(.footnote).foregroundStyle(.secondary)
-                } else {
-                    Button(failed ? "Opnieuw proberen" : "Ik lig klaar") { run(p) }
-                        .buttonStyle(.borderedProminent).disabled(!hub.watchReachable)
-                }
-                if failed {
-                    Text("De meting kwam niet aan. Zit je watch om, ontgrendeld, en staat Snoredle erop open?")
-                        .font(.footnote).foregroundStyle(.orange).multilineTextAlignment(.center)
-                }
-                Text("Tip: je kan ook op de watch zelf kalibreren: open Snoredle op je watch › Kalibreer.")
-                    .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    .multilineTextAlignment(.center).foregroundStyle(.secondary)
+
+                statusBlock(p)
+                Spacer(minLength: 0)
+                controls(p)
             } else {
-                Image(systemName: "checkmark.circle.fill").font(.system(size: 56)).foregroundStyle(.green)
-                Text("Klaar! Je watch herkent nu je slaaphoudingen.")
-                Button("Sluiten") { dismiss() }.buttonStyle(.borderedProminent)
+                Spacer()
+                let failed = positions.filter { done[$0] != true }
+                Image(systemName: failed.isEmpty ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                    .font(.system(size: 64)).foregroundStyle(failed.isEmpty ? .green : .orange)
+                Text(failed.isEmpty ? "Klaar! Je watch herkent nu je slaaphoudingen." : "Bijna klaar")
+                    .font(.headline).multilineTextAlignment(.center)
+                if !failed.isEmpty {
+                    Text("Niet gelukt: \(failed.map(\.label).joined(separator: ", ")).")
+                        .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    Button("Opnieuw: \(failed[0].label)") { index = positions.firstIndex(of: failed[0]) ?? 0; step = .idle }
+                        .buttonStyle(.borderedProminent)
+                }
+                Spacer()
+                Button("Sluiten") { dismiss() }.buttonStyle(.bordered)
             }
         }
-        .padding(28)
-        .presentationDetents([.medium, .large])
+        .padding(24)
+        .presentationDetents([.large])
+        .interactiveDismissDisabled(busy)
+        .task { await connect() }
+        .onDisappear {
+            runner?.cancel()
+            voice.stop()
+            hub.endCalibration()
+            UIApplication.shared.isIdleTimerDisabled = false
+        }
     }
 
-    private func run(_ p: SleepPosition) {
-        failed = false
-        let before = hub.profile.vectors[p]
-        countdown = 10
-        Task {
-            while countdown > 0 {
+    private var progressDots: some View {
+        HStack(spacing: 8) {
+            ForEach(Array(positions.enumerated()), id: \.offset) { i, p in
+                Capsule()
+                    .fill(done[p] == true ? Color.green : done[p] == false ? Color.orange : i == index ? Theme.accent : Color.secondary.opacity(0.3))
+                    .frame(height: 6)
+            }
+        }
+    }
+
+    @ViewBuilder private func statusBlock(_ p: SleepPosition) -> some View {
+        switch step {
+        case .getReady(let n):
+            Text("\(n)").font(.system(size: 64, weight: .bold, design: .rounded)).monospacedDigit()
+            Text("Ga nu liggen…").font(.footnote).foregroundStyle(.secondary)
+        case .measuring:
+            ProgressView().controlSize(.large)
+            Text("Stil blijven liggen… de watch meet").font(.footnote).foregroundStyle(.secondary)
+        case .ok:
+            Label("\(p.label) opgeslagen", systemImage: "checkmark.circle.fill").foregroundStyle(.green).font(.headline)
+        case .failed:
+            Text("De meting kwam niet aan. Zit je watch goed om en is hij ontgrendeld?")
+                .font(.footnote).foregroundStyle(.orange).multilineTextAlignment(.center)
+        case .idle:
+            if connecting {
+                ProgressView("Watch verbinden…").font(.footnote)
+            } else if let connectError {
+                Text(connectError).font(.footnote).foregroundStyle(.orange).multilineTextAlignment(.center)
+                Button("Opnieuw verbinden") { Task { await connect() } }.font(.footnote)
+            } else {
+                Text("Druk op Start. Je krijgt 10 seconden om te gaan liggen; je iPhone telt hardop af en zegt wanneer het klaar is.")
+                    .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            }
+        }
+    }
+
+    @ViewBuilder private func controls(_ p: SleepPosition) -> some View {
+        if nightRunning {
+            Text("Stop eerst de nacht om te kalibreren.").font(.footnote).foregroundStyle(.orange)
+        } else if step == .ok {
+            let next = index + 1 < positions.count ? positions[index + 1] : nil
+            Button {
+                index += 1; step = .idle
+                if next != nil { run() }
+            } label: {
+                Text(next.map { "Start volgende: \($0.label)" } ?? "Afronden").frame(maxWidth: .infinity).padding(.vertical, 8)
+            }.buttonStyle(.borderedProminent)
+            Button("Deze opnieuw") { run() }.font(.footnote)
+        } else {
+            Button {
+                if busy { runner?.cancel(); step = .idle; voice.stop() } else { run() }
+            } label: {
+                Text(busy ? "Annuleren" : step == .failed ? "Opnieuw proberen" : "Start").frame(maxWidth: .infinity).padding(.vertical, 8)
+            }
+            .buttonStyle(.borderedProminent).tint(busy ? .gray : Theme.accent)
+            .disabled(connecting || (!connected && !busy))
+            if index > 0 && !busy { Button("Sla over") { index += 1; step = .idle }.font(.footnote) }
+        }
+    }
+
+    private func connect() async {
+        guard !connected, !nightRunning else { return }
+        connecting = true; connectError = nil
+        let ok = await hub.beginCalibration()
+        connecting = false
+        connected = ok || hub.watchReachable
+        if !connected {
+            connectError = "Je watch reageert niet. Doe hem om, ontgrendel hem en open Snoredle één keer op de watch."
+        }
+    }
+
+    /// Eén houding: aftellen, meten, stoppen.
+    private func run() {
+        guard let p = position else { return }
+        runner?.cancel()
+        UIApplication.shared.isIdleTimerDisabled = true
+        voice.enabled = speak
+        runner = Task { @MainActor in
+            voice.say("Ga \(p.instruction) liggen.")
+            for n in stride(from: 10, through: 1, by: -1) {
+                step = .getReady(n)
+                if n <= 3 { voice.say("\(n)") }
                 try? await Task.sleep(for: .seconds(1))
-                countdown -= 1
-                if countdown == 5 { hub.calibrate(p) }
+                if Task.isCancelled { return }
             }
-            // Wacht tot de watch de meting terugstuurt (max. 8 s).
-            for _ in 0..<16 {
-                if let v = hub.profile.vectors[p], v != before { step += 1; return }
+            step = .measuring
+            voice.say("Stil blijven.")
+            let before = hub.profile.vectors[p]
+            hub.calibrate(p)
+            var ok = false
+            for _ in 0..<28 {                 // watch meet 5 s; max. 14 s wachten
                 try? await Task.sleep(for: .milliseconds(500))
+                if Task.isCancelled { return }
+                if let v = hub.profile.vectors[p], v != before { ok = true; break }
             }
-            failed = true
+            done[p] = ok
+            step = ok ? .ok : .failed
+            UINotificationFeedbackGenerator().notificationOccurred(ok ? .success : .error)
+            if ok {
+                let next = index + 1 < positions.count ? positions[index + 1] : nil
+                voice.say(next.map { "Klaar. Volgende: \($0.instruction)." } ?? "Klaar. Alle houdingen zijn gekalibreerd.")
+            } else {
+                voice.say("Dat lukte niet. Probeer opnieuw.")
+            }
+        }
+    }
+}
+
+/// Gesproken instructies op de iPhone, ook als de stille modus aanstaat.
+@MainActor
+final class CalibrationVoice {
+    var enabled = true
+    private let synth = AVSpeechSynthesizer()
+    private var activated = false
+
+    func say(_ text: String) {
+        guard enabled else { return }
+        if !activated {
+            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+            try? AVAudioSession.sharedInstance().setActive(true)
+            activated = true
+        }
+        let u = AVSpeechUtterance(string: text)
+        u.voice = AVSpeechSynthesisVoice(language: "nl-BE") ?? AVSpeechSynthesisVoice(language: "nl-NL")
+        u.rate = 0.5
+        synth.speak(u)
+    }
+
+    func stop() {
+        synth.stopSpeaking(at: .immediate)
+        if activated {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            activated = false
         }
     }
 }

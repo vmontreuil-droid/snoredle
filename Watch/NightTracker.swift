@@ -53,8 +53,9 @@ final class NightTracker: NSObject, ObservableObject {
         isTracking = true
         trackingSince = .now
         workoutRestarts = 0; heartbeatFailures = 0
-        startWorkout()
-        startMotion()
+        if calibMode { calibMode = false; calibTimeout?.cancel(); calibTimeout = nil }
+        if workout == nil { startWorkout() }
+        if !motion.isDeviceMotionActive { startMotion() }
         remoteLog("meting op watch gestart (elke \(Int(settings.sampleIntervalSeconds)) s een seintje)")
         stepTotal = 0; stepsReported = 0
         if CMPedometer.isStepCountingAvailable() {
@@ -246,9 +247,11 @@ final class NightTracker: NSObject, ObservableObject {
                 profile.vectors[p] = g.normalized
                 sendReliable(.calibrationCaptured(position: p, gravity: g.normalized))
                 WKInterfaceDevice.current().play(.success)
+            } else {
+                remoteLog("kalibratie \(p.rawValue): geen bewegingsgegevens")
             }
             calibrating = nil
-            if !isTracking && guidedStep == nil { motion.stopDeviceMotionUpdates() }
+            if !isTracking && !calibMode { motion.stopDeviceMotionUpdates() }
         }
     }
 
@@ -283,53 +286,38 @@ final class NightTracker: NSObject, ObservableObject {
         else { WCSession.default.transferUserInfo(["msg": data]) }
     }
 
-    /// Kalibratie volledig op de watch: 4 houdingen, telkens 10 s met trillingen als signaal.
-    @Published private(set) var guidedStep: SleepPosition?
-    @Published private(set) var guidedCountdown = 0
+    /// Kalibreren via de iPhone: workout houdt de app (en de bewegingssensor) actief met het scherm uit.
+    @Published private(set) var calibMode = false
+    private var calibTimeout: Task<Void, Never>?
 
-    func runGuidedCalibration() {
-        guard guidedStep == nil else { return }
-        // Houdt de app actief met het scherm uit (anders pauzeert watchOS de meting).
-        let ownSession = !isTracking
-        if ownSession { startWorkout() }
+    func beginCalibrationMode() {
+        guard !isTracking else { return }
+        calibMode = true
+        if workout == nil { startWorkout() }
         if !motion.isDeviceMotionActive { startMotion() }
-        Task {
-            defer {
-                if ownSession && !isTracking {
-                    let w = workout; workout = nil
-                    w?.end()
-                    let b = builder
-                    b?.endCollection(withEnd: .now) { _, _ in b?.discardWorkout() }
-                    workout = nil; builder = nil
-                    motion.stopDeviceMotionUpdates()
-                }
-            }
-            for p in SleepPosition.calibratable {
-                guidedStep = p
-                say("Lig nu \(p.instruction)")
-                for _ in 0..<2 { WKInterfaceDevice.current().play(.notification); try? await Task.sleep(for: .milliseconds(600)) }
-                for i in stride(from: 10, to: 0, by: -1) {
-                    guidedCountdown = i
-                    if i == 5 { calibrate(p) }
-                    try? await Task.sleep(for: .seconds(1))
-                }
-                try? await Task.sleep(for: .seconds(1))
-            }
-            guidedStep = nil
-            guidedCountdown = 0
-            WKInterfaceDevice.current().play(.success)
-            say("Klaar. Je houdingen zijn gekalibreerd.")
+        remoteLog("kalibratiemodus aan")
+        calibTimeout?.cancel()
+        calibTimeout = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(480))
+            guard !Task.isCancelled else { return }
+            self?.endCalibrationMode()
         }
     }
 
-    private let speech = AVSpeechSynthesizer()
-    /// Gesproken instructie via de luidspreker van de watch.
-    private func say(_ text: String) {
-        let u = AVSpeechUtterance(string: text)
-        u.voice = AVSpeechSynthesisVoice(language: "nl-BE") ?? AVSpeechSynthesisVoice(language: "nl-NL")
-        u.rate = 0.48
-        speech.speak(u)
+    func endCalibrationMode() {
+        guard calibMode else { return }
+        calibMode = false
+        calibTimeout?.cancel(); calibTimeout = nil
+        remoteLog("kalibratiemodus uit")
+        guard !isTracking else { return }
+        let w = workout; workout = nil
+        w?.end()
+        let b = builder
+        b?.endCollection(withEnd: .now) { _, _ in b?.discardWorkout() }
+        builder = nil
+        if calibrating == nil { motion.stopDeviceMotionUpdates() }
     }
+
 
     func send(_ msg: WatchMessage) {
         guard let data = try? msg.encoded() else { return }
@@ -396,6 +384,7 @@ final class NightTracker: NSObject, ObservableObject {
             nudge(i)
         case .startCalibration(let p): calibrate(p)
         case .calibrationProfile(let p): profile = p
+        case .calibrationMode(let on): on ? beginCalibrationMode() : endCalibrationMode()
         case .sessionState(let rec, let until):
             // Net gestart? Dan kan dit een oude status zijn (van gisteren, via applicationContext)
             // die toevallig na de start binnenkomt — niet stoppen. Een echte stop komt via stopSession.
