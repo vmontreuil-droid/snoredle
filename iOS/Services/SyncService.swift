@@ -6,8 +6,8 @@ import UIKit
 /// Instellingen van het portaal. De "anon key" van Supabase is openbaar bedoeld:
 /// de beveiliging zit in de database (elke gebruiker ziet enkel zijn eigen rijen).
 enum SyncConfig {
-    static let supabaseURL = "https://YOUR-PROJECT.supabase.co"
-    static let anonKey = "YOUR-ANON-KEY"
+    static let supabaseURL = "https://tauachxdezdjwszellfu.supabase.co"
+    static let anonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRhdWFjaHhkZXpkandzemVsbGZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTU3OTk4MzMsImV4cCI6MjExMTM3NTgzM30.vQOHLNolD2D-EG1IdsTkFDCw9biWQDhVjZxEMCuQEpg"
     static let portalURL = URL(string: "https://snoredle.netlify.app")!
     static var isConfigured: Bool { !supabaseURL.contains("YOUR-PROJECT") && !anonKey.contains("YOUR-") }
 }
