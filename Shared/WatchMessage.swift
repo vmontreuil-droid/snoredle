@@ -51,7 +51,7 @@ public struct WatchSettings: Codable, Sendable, Hashable {
     public var nudgeEnabled: Bool
     public var nudgeOnlyOnBack: Bool
     public var sampleIntervalSeconds: Double
-    public init(nudgeEnabled: Bool = true, nudgeOnlyOnBack: Bool = true, sampleIntervalSeconds: Double = 10) {
+    public init(nudgeEnabled: Bool = true, nudgeOnlyOnBack: Bool = false, sampleIntervalSeconds: Double = 10) {
         self.nudgeEnabled = nudgeEnabled
         self.nudgeOnlyOnBack = nudgeOnlyOnBack
         self.sampleIntervalSeconds = sampleIntervalSeconds

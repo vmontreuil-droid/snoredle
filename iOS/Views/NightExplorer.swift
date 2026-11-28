@@ -265,7 +265,8 @@ struct NightExplorerView: View {
     }
 
     private var axisStride: Calendar.Component { visible <= 45 * 60 ? .minute : .hour }
-    private var axisCount: Int { visible <= 20 * 60 ? 5 : (visible <= 45 * 60 ? 10 : (visible <= 4 * 3600 ? 1 : 1)) }
+    // Max. ± 5 labels op de breedte van een gsm, anders lopen de uren in elkaar.
+    private var axisCount: Int { visible <= 20 * 60 ? 5 : (visible <= 45 * 60 ? 10 : (visible <= 3 * 3600 ? 1 : (visible <= 6 * 3600 ? 2 : 3))) }
 
     /// Gemeenschappelijke instellingen: samen scrollen, zoomen en selecteren.
     private func timeline<C: View>(_ chart: C) -> some View {
@@ -285,6 +286,12 @@ struct NightExplorerView: View {
                             .gesture(DragGesture(minimumDistance: 0)
                                 .onChanged { v in
                                     if let a = date(v.startLocation.x), let b = date(v.location.x) { rangeA = a; rangeB = b }
+                                }
+                                .onEnded { v in
+                                    // Gewoon getikt (niet gesleept): kwartier rond het tikpunt.
+                                    guard abs(v.translation.width) < 8, let d = date(v.location.x) else { return }
+                                    let a = max(start, d.addingTimeInterval(-450)), b = min(end, a.addingTimeInterval(900))
+                                    withAnimation(.snappy) { rangeA = max(start, b.addingTimeInterval(-900)); rangeB = b }
                                 })
                     } else {
                         // Alleen tikken opvangen; vegen blijft scrollen.

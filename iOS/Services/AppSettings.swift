@@ -5,6 +5,15 @@ import SwiftUI
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
 
+    init() {
+        // Eenmalig: tikjes in elke houding (vroeger standaard alleen op de rug).
+        let d = UserDefaults.standard
+        if !d.bool(forKey: "mig_nudgeAllPositions") {
+            d.set(false, forKey: "nudgeOnlyOnBack")
+            d.set(true, forKey: "mig_nudgeAllPositions")
+        }
+    }
+
     // Detectie
     @AppStorage("sensitivity") var sensitivity: Double = 0.5          // 0 = streng, 1 = gevoelig
     @AppStorage("calibrationOffset") var calibrationOffset: Double = 94
@@ -19,7 +28,7 @@ final class AppSettings: ObservableObject {
 
     // Watch / tikjes
     @AppStorage("nudgeEnabled") var nudgeEnabled: Bool = true
-    @AppStorage("nudgeOnlyOnBack") var nudgeOnlyOnBack: Bool = true
+    @AppStorage("nudgeOnlyOnBack") var nudgeOnlyOnBack: Bool = false
     @AppStorage("nudgeIntensity") var nudgeIntensityRaw: String = NudgeIntensity.medium.rawValue
     @AppStorage("nudgeAfterSeconds") var nudgeAfterSeconds: Double = 20  // na x sec. aanhoudend snurken
     @AppStorage("nudgeCooldownMinutes") var nudgeCooldownMinutes: Double = 3
