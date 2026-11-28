@@ -303,6 +303,7 @@ final class SessionManager: ObservableObject {
         Task { await AlarmService.shared.arm() }
         pausedUntil = nil; pauseStart = nil
         if !resuming { DiagLog.shared.resetCounters() }
+        DiagLog.shared.log("nacht", "microfoon: \(detector.inputDescription)")
         DiagLog.shared.log("nacht", "geluid bij snurken: \(NudgeSound(rawValue: settings.nudgeSoundRaw)?.label ?? "?") op \(Int(settings.nudgeSoundVolume * 100))% · mediavolume iPhone \(Int(NudgeSoundPlayer.systemVolume * 100))%")
         DiagLog.shared.log("nacht", "START · watch actief: \(hub.active.map(\.name)) · tikjes \(settings.nudgeEnabled ? "aan" : "uit") (alleen rug: \(settings.nudgeOnlyOnBack), na \(Int(settings.nudgeAfterSeconds)) s, eerste \(settings.nudgeQuietFirstMinutes) min niet) · volgende wekker: \(AlarmService.shared.nextItem.map { "\($0.0.timeText) slim=\($0.0.smart)" } ?? "geen")")
         defer { broadcastState() }

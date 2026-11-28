@@ -43,12 +43,32 @@ final class SnoreDetector: NSObject {
     /// Wordt opgeroepen als de detector zichzelf herstart heeft (reden voor het logboek).
     var onRestart: ((String) -> Void)?
 
-    func start() throws {
+    /// Altijd dezelfde sessie en dezelfde microfoon (onderaan de iPhone). Na een onderbreking of
+    /// routewissel kiest iOS anders soms een andere microfoon met een andere gevoeligheid,
+    /// waardoor alle dB-waarden in één klap ±20 dB verspringen.
+    private func configureSession() throws {
         let session = AVAudioSession.sharedInstance()
         // .default i.p.v. .measurement: in meetmodus speelt de speaker veel stiller af.
         // Geen .allowBluetooth: anders neemt een headset (AirPods) de microfoon over.
         try session.setCategory(.playAndRecord, mode: .default,
                                 options: [.mixWithOthers, .defaultToSpeaker, .allowBluetoothA2DP])
+        if let mic = session.availableInputs?.first(where: { $0.portType == .builtInMic }) {
+            try? session.setPreferredInput(mic)
+            if let bottom = mic.dataSources?.first(where: { $0.orientation == .bottom }) {
+                try? mic.setPreferredDataSource(bottom)
+            }
+        }
+    }
+
+    /// Welke microfoon nu gebruikt wordt (voor het logboek).
+    var inputDescription: String {
+        guard let i = AVAudioSession.sharedInstance().currentRoute.inputs.first else { return "geen" }
+        return "\(i.portName)\(i.selectedDataSource.map { " · \($0.dataSourceName)" } ?? "")"
+    }
+
+    func start() throws {
+        let session = AVAudioSession.sharedInstance()
+        try configureSession()
         try session.setActive(true)
         try startEngine()
         running = true
@@ -102,9 +122,10 @@ final class SnoreDetector: NSObject {
         lastRestart = Date()
         engine.stop()
         do {
+            try? configureSession()
             try AVAudioSession.sharedInstance().setActive(true)
             try startEngine()
-            onRestart?("\(reason) → herstart gelukt")
+            onRestart?("\(reason) → herstart gelukt · microfoon: \(inputDescription)")
         } catch {
             onRestart?("\(reason) → herstart MISLUKT: \(error.localizedDescription)")
         }
@@ -156,8 +177,7 @@ final class SnoreDetector: NSObject {
     @objc private func handleMediaReset(_ note: Notification) {
         DispatchQueue.main.async {
             guard self.running else { return }
-            try? AVAudioSession.sharedInstance().setCategory(.playAndRecord, mode: .default,
-                                                             options: [.mixWithOthers, .defaultToSpeaker, .allowBluetoothA2DP])
+            try? self.configureSession()
             self.restart(reason: "audiosysteem herstart")
         }
     }
